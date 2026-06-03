@@ -1,0 +1,54 @@
+# Node
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Runtime
+pids/
+*.pid
+*.seed
+
+# Build / output
+dist/
+build/
+out/
+release/
+
+# Coverage
+coverage/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache
+.npm/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Electron build artifacts
+*.app
+*.exe
+*.dmg
+*.deb
+
+# Misc
+.cache/
+.parcel-cache/
+*.tgz
