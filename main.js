@@ -1,4 +1,6 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const path = require("path");
+const fs = require("fs");
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -13,6 +15,14 @@ function createWindow() {
   win.loadFile("index.html");
 }
 
-app.whenReady().then(() => {
-  createWindow();
+// Open folder picker
+ipcMain.handle("select-folder", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory"]
+  });
+
+  if (result.canceled) return null;
+  return result.filePaths[0];
 });
+
+app.whenReady().then(createWindow);
