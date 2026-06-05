@@ -1,0 +1,73 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f5f5;
+}
+
+.container {
+  padding: 20px;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+button {
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+#path {
+  margin-top: 10px;
+  color: gray;
+  font-size: 14px;
+}
+
+#tree-container {
+  margin-top: 20px;
+  background: white;
+  padding: 15px;
+  border-radius: 10px;
+  height: 500px;
+  overflow-y: auto;
+}
+
+/* Tree items */
+.tree-item {
+  margin-left: 20px;
+  cursor: pointer;
+  user-select: none;
+  line-height: 24px;
+}
+
+.folder {
+  font-weight: 400;
+}
+
+.folder > span,
+.folder {
+  font-weight: 400;
+}
+
+.children {
+  font-weight: normal;
+}
+
+/* Children hidden by default */
+.children {
+  display: none;
+  margin-left: 15px;
+}
+
+/* Expand system */
+.expanded > .children {
+  display: block;
+}
+
+.arrow {
+  display: inline-block;
+  width: 18px;
+  text-align: center;
+}

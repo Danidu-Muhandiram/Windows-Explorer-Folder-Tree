@@ -8,7 +8,8 @@ const fs = require("fs");
 const path = require("path");
 
 const btn = document.getElementById("btn");
-const output = document.getElementById("output");
+const pathDiv = document.getElementById("path");
+const treeContainer = document.getElementById("tree-container");
 
 btn.addEventListener("click", async () => {
   // Main process to open folder picker
@@ -18,41 +19,89 @@ btn.addEventListener("click", async () => {
   if (!folderPath) return;
 
   // Show selected folder path on screen
-  output.innerHTML = "<b>Selected:</b> " + folderPath;
+  pathDiv.textContent = folderPath;
+
+  // Clear previous tree
+  treeContainer.innerHTML = "";
 
   // Generate folder tree structure and display it
-  const tree = buildTree(folderPath);
-  output.innerHTML += "<pre>" + tree + "</pre>";
+  const tree = createTree(folderPath);
+  treeContainer.appendChild(tree);
 });
 
-// Recursive folder tree generator
+// OLD VERSION (kept for reference - not used anymore)
 function buildTree(dir, prefix = "") {
-  //final results
   let result = "";
-  // Read all files and folders inside current directory
+
   const items = fs.readdirSync(dir);
 
-  // Loop through every item and check if it's a file or folder
   items.forEach((item, index) => {
     const fullPath = path.join(dir, item);
-    // Check if current item is last item
     const isLast = index === items.length - 1;
 
-    // Choose tree symbol
-    // Last item -> └──
-    // Middle item -> ├──
     const marker = isLast ? "└── " : "├── ";
     result += prefix + marker + item + "\n";
 
     if (fs.lstatSync(fullPath).isDirectory()) {
-      // Create spacing for child items
-      // If last folder → spaces
-      // Otherwise → keep vertical line
       const newPrefix = prefix + (isLast ? "    " : "│   ");
-      // Go inside folder and repeat same logic
       result += buildTree(fullPath, newPrefix);
     }
   });
 
   return result;
+}
+
+// NEW VERSION (interactive UI tree)
+function createTree(dirPath, prefix = "") {
+  const container = document.createElement("div");
+
+  const items = fs.readdirSync(dirPath);
+
+  items.forEach((item, index) => {
+    const fullPath = path.join(dirPath, item);
+    const isDirectory = fs.lstatSync(fullPath).isDirectory();
+    const isLast = index === items.length - 1;
+
+    const marker = isLast ? "└── " : "├── ";
+
+    const itemDiv = document.createElement("div");
+    itemDiv.classList.add("tree-item");
+
+    if (isDirectory) {
+      itemDiv.classList.add("folder");
+
+      itemDiv.innerHTML =`${prefix}${marker}<span class="arrow">▶</span> 📁 ${item}`;
+
+      const children = document.createElement("div");
+      children.classList.add("children");
+
+      try {
+        const newPrefix = prefix + (isLast ? "    " : "│   ");
+        children.appendChild(createTree(fullPath, newPrefix));
+      } catch (err) {}
+
+      itemDiv.addEventListener("click", (e) => {
+      e.stopPropagation();
+
+      itemDiv.classList.toggle("expanded");
+
+      const arrow = itemDiv.querySelector(".arrow");
+
+      if (arrow) {
+        arrow.textContent =
+          itemDiv.classList.contains("expanded")
+            ? "▼"
+            : "▶";
+      }
+    });
+
+      itemDiv.appendChild(children);
+    } else {
+      itemDiv.innerHTML = `${prefix}${marker}📄 ${item}`;
+    }
+
+    container.appendChild(itemDiv);
+  });
+
+  return container;
 }
