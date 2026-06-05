@@ -10,6 +10,13 @@ const path = require("path");
 const btn = document.getElementById("btn");
 const pathDiv = document.getElementById("path");
 const treeContainer = document.getElementById("tree-container");
+const themeSelect = document.getElementById("theme-select");
+
+if (themeSelect) {
+  themeSelect.addEventListener("change", () => {
+    document.body.setAttribute("data-theme", themeSelect.value);
+  });
+}
 
 btn.addEventListener("click", async () => {
   // Main process to open folder picker
