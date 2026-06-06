@@ -1,33 +1,150 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Folder Tree App</title>
+  <meta charset="UTF-8">
+  <title>🌳 Folder Tree Explorer</title>
+  <!-- Outfit Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
-  <div class="container">
+  <div class="app-container">
 
-    <div class="top-bar">
-      <h1>🌳 Folder Tree</h1>
-      <div class="top-actions">
-        <label for="theme-select" class="theme-label">Theme</label>
-        <select id="theme-select">
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-        <button id="btn">Select Folder</button>
+    <!-- Top Navigation Bar -->
+    <header class="top-bar">
+      <div class="app-logo">
+        <span class="logo-emoji">🌳</span>
+        <h1>Folder Tree Explorer</h1>
       </div>
+      <div class="top-actions">
+        <div class="theme-picker">
+          <label for="theme-select" class="theme-label">Theme</label>
+          <select id="theme-select">
+            <option value="light">☀️ Light</option>
+            <option value="dark" selected>🌙 Dark</option>
+          </select>
+        </div>
+        <button id="btn" class="primary-btn">Select Folder</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <div class="workspace">
+      
+      <!-- Sidebar containing Controls and Favorites -->
+      <aside class="sidebar">
+        
+        <!-- Controls Panel -->
+        <section class="control-panel">
+          <h3>Controls</h3>
+          
+          <div class="control-group">
+            <label for="filter-select">File Type Filter</label>
+            <select id="filter-select">
+              <option value="all">📁 All Files</option>
+              <option value="images">🖼️ Images</option>
+              <option value="png">🖼️ PNG Only</option>
+              <option value="jpg">🖼️ JPG/JPEG Only</option>
+              <option value="pdf">📕 PDF Documents</option>
+              <option value="word">📘 Word Documents</option>
+              <option value="excel">📗 Excel/CSV Spreadsheets</option>
+              <option value="ppt">📙 PowerPoint Slides</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="sort-select">Sort Order</label>
+            <select id="sort-select">
+              <option value="name-asc">Name (A-Z)</option>
+              <option value="name-desc">Name (Z-A)</option>
+              <option value="size-asc">Size (Smallest first)</option>
+              <option value="size-desc">Size (Largest first)</option>
+              <option value="date-asc">Date Modified (Oldest first)</option>
+              <option value="date-desc">Date Modified (Newest first)</option>
+            </select>
+          </div>
+
+          <div class="toggle-group">
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-date">
+              <span class="switch-slider"></span>
+              <span class="switch-label">Show modified date</span>
+            </label>
+            
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-size">
+              <span class="switch-slider"></span>
+              <span class="switch-label">Show file/folder size</span>
+            </label>
+          </div>
+
+          <button id="pin-btn" class="secondary-btn">📌 Pin Current Folder</button>
+        </section>
+
+        <!-- Pinned Folders (Favorites) -->
+        <section id="pinned-container" class="pinned-panel">
+          <div class="pinned-header">
+            <h3>Favorites</h3>
+          </div>
+          <div id="pinned-list" class="pinned-list-items">
+            <!-- Pinned folders dynamically rendered here -->
+          </div>
+        </section>
+
+      </aside>
+
+      <!-- Main Contents Area: Tree & Preview -->
+      <main class="main-content">
+        
+        <!-- Current Folder Path Display -->
+        <div class="path-bar">
+          <span class="path-label">Location:</span>
+          <div id="path">No folder selected</div>
+        </div>
+
+        <div class="viewer-layout">
+          
+          <!-- Tree Viewer Panel -->
+          <div class="tree-panel">
+            <div id="tree-container">
+              <div class="empty-tree-state">
+                <span class="empty-icon">📁</span>
+                <p>Click "Select Folder" to browse your directory structure.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Preview Panel -->
+          <section id="preview-panel" class="preview-panel">
+            <div class="preview-header">
+              <h3 id="preview-title">No file selected</h3>
+              <button id="open-file-btn" class="icon-btn" disabled>🌐 Open</button>
+            </div>
+            
+            <div id="preview-meta" class="preview-meta-container">
+              <!-- Metadata like path, size, dates will display here -->
+            </div>
+            
+            <div id="preview-body" class="preview-body-container">
+              <div class="empty-preview-state">
+                <span class="empty-preview-icon">👁️</span>
+                <p>Select a file from the tree to view its preview and details.</p>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+      </main>
+
     </div>
-
-    <div id="path"></div>
-
-    <div id="tree-container"></div>
 
   </div>
 
   <script src="renderer.js"></script>
-
 </body>
 </html>
