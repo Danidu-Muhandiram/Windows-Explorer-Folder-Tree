@@ -61,6 +61,10 @@ $dockedExplorerHandle = 0
 # Fixed sidebar width
 $sidebarWidth = 320
 
+# Store original Explorer bounds
+# Used to restore size later
+$originalExplorerBounds = @{}
+
 # Infinite loop
 # Keeps watching File Explorer forever
 while ($true) {
@@ -161,6 +165,19 @@ while ($true) {
                             }
                         }
 
+                        
+                        # Save original Explorer size
+                        # Used when restoring later
+                        if (-not $originalExplorerBounds.ContainsKey($window.HWND)) {
+
+                            $originalExplorerBounds[$window.HWND] = @{
+                                x = $rect.Left
+                                y = $rect.Top
+                                width = $width
+                                height = $height
+                            }
+                        }
+
                         # Check if Explorer is minimized
                         $isMinimized =
                             [WinAPI]::IsIconic(
@@ -209,4 +226,26 @@ while ($true) {
     # Wait 300 milliseconds
     # Prevents CPU overuse while staying responsive
     Start-Sleep -Milliseconds 300
+}
+
+# Restore Explorer windows
+# Runs when script exits
+foreach ($hwnd in $originalExplorerBounds.Keys) {
+
+    try {
+
+        $bounds =
+            $originalExplorerBounds[$hwnd]
+
+        # Restore Explorer original size
+        [WinAPI]::MoveWindow(
+            [IntPtr]$hwnd,
+            $bounds.x,
+            $bounds.y,
+            $bounds.width,
+            $bounds.height,
+            $true
+        ) | Out-Null
+
+    } catch {}
 }

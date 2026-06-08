@@ -696,3 +696,26 @@ document.addEventListener("DOMContentLoaded", initSettings);
 if (document.readyState === "interactive" || document.readyState === "complete") {
   initSettings();
 }
+
+const smartSidebarToggle =
+  document.getElementById(
+    "smartSidebarToggle"
+  );
+
+if (smartSidebarToggle) {
+
+  smartSidebarToggle.addEventListener(
+    "change",
+    () => {
+
+      
+      console.log("toggle clicked");
+      window.require("electron")
+        .ipcRenderer.send(
+          "toggle-smart-sidebar",
+          smartSidebarToggle.checked
+        );
+
+    }
+  );
+}

@@ -11,6 +11,7 @@ const SIDEBAR_WIDTH = 320;
 //store the PowerShell watcher process
 let explorerWatcher;
 
+
 // function to create the Electron app window
 function createWindow() {
   // Create a new browser window
@@ -41,8 +42,7 @@ function createWindow() {
 });
 
 sidebarWindow.loadFile("sidebar.html");
-  // Start watching File Explorer paths
-  startExplorerWatcher();
+  
 }
 
 // Function to start monitoring Windows File Explorer
@@ -140,16 +140,52 @@ ipcMain.handle("select-folder", async () => {
   return result.filePaths[0];
 });
 
+ipcMain.on(
+  "toggle-smart-sidebar",
+  (_, enabled) => {
+
+    // Turn ON sidebar feature
+    if (enabled) {
+
+      if (!explorerWatcher) {
+
+        startExplorerWatcher();
+      }
+
+      return;
+    }
+
+    // Turn OFF sidebar feature
+    if (explorerWatcher) {
+
+      explorerWatcher.kill();
+      explorerWatcher = null;
+    }
+
+    // Hide sidebar immediately
+    if (sidebarWindow) {
+
+      sidebarWindow.hide();
+    }
+  }
+);
+
 // When Electron app is ready
 app.whenReady().then(createWindow);
 
-// When all windows are closed
-app.on("window-all-closed", () => {
+// Before Electron quits
+app.on("before-quit", () => {
 
-  // Stop PowerShell watcher before quitting
+  // Stop PowerShell watcher
+  // This allows Explorer restore logic to run
   if (explorerWatcher) {
+
     explorerWatcher.kill();
   }
+});
+
+// When all windows are closed
+app.on("window-all-closed", () => {
 
   // Close Electron app
   app.quit();
