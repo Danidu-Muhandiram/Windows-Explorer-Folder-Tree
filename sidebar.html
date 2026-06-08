@@ -1,38 +1,141 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Explorer Sidebar</title>
+  <meta charset="UTF-8" />
 
-    <style>
-        body {
-            margin: 0;
-            background: #1e1e1e;
-            color: white;
-            font-family: Arial, sans-serif;
-            overflow: hidden;
-        }
+  <title>Explorer Sidebar</title>
 
-        .header {
-            padding: 15px;
-            font-size: 18px;
-            border-bottom: 1px solid #333;
-        }
+  <!-- Same font -->
+  <link rel="preconnect"
+        href="https://fonts.googleapis.com">
 
-        .content {
-            padding: 15px;
-        }
-    </style>
+  <link rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin>
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet"
+  >
+
+  <!-- Reuse same styles -->
+  <link rel="stylesheet"
+        href="style.css">
 </head>
-<body>
 
-    <div class="header">
-        Explorer Sidebar
-    </div>
+<body class="sidebar-mode">
 
-    <div class="content">
+  <div class="sidebar-app">
+
+    <!-- Compact top controls -->
+    <header class="sidebar-top-controls">
+
+      <!-- File Type Filter -->
+      <select id="filter-select">
+
+        <option value="all">
+          📁 All Files
+        </option>
+
+        <option value="images">
+          🖼️ Images
+        </option>
+
+        <option value="png">
+          PNG
+        </option>
+
+        <option value="jpg">
+          JPG
+        </option>
+
+        <option value="pdf">
+          PDF
+        </option>
+
+        <option value="word">
+          Word
+        </option>
+
+        <option value="excel">
+          Excel
+        </option>
+
+        <option value="ppt">
+          PowerPoint
+        </option>
+
+      </select>
+
+      <!-- Sorting -->
+      <select id="sort-select">
+
+        <option value="name-asc">
+          A-Z
+        </option>
+
+        <option value="name-desc">
+          Z-A
+        </option>
+
+        <option value="size-asc">
+          Size ↑
+        </option>
+
+        <option value="size-desc">
+          Size ↓
+        </option>
+
+        <option value="date-asc">
+          Oldest
+        </option>
+
+        <option value="date-desc">
+          Newest
+        </option>
+
+      </select>
+
+    </header>
+
+    <!-- Folder Path -->
+    <div class="path-bar">
+
+      <span class="path-label">
+        Location:
+      </span>
+
+      <div id="path">
         Waiting for Explorer...
+      </div>
+
     </div>
+
+    <!-- SAME TREE UI -->
+    <main class="tree-panel">
+
+      <div id="tree-container">
+
+        <div class="empty-tree-state">
+
+          <span class="empty-icon">
+            📂
+          </span>
+
+          <p>
+            Open File Explorer
+          </p>
+
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <script src="renderer.js"></script>
+  <script src="sidebar.js"></script>
 
 </body>
 </html>

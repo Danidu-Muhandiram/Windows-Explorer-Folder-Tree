@@ -719,3 +719,8 @@ if (smartSidebarToggle) {
     }
   );
 }
+
+// Make openRootFolder globally accessible
+// Sidebar window can reuse same tree rendering logic
+window.openRootFolder =
+  openRootFolder;

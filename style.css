@@ -803,3 +803,37 @@ body[data-theme="dark"] ::-webkit-scrollbar-thumb {
 body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background: rgba(161, 161, 170, 0.4);
 }
+
+/* Smart Explorer Sidebar Mode */
+.sidebar-mode {
+  margin: 0;
+  overflow: hidden;
+}
+
+.sidebar-app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-top-controls {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid
+    var(--border-color);
+}
+
+.sidebar-top-controls select {
+  flex: 1;
+}
+
+.tree-panel {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.path-bar {
+  border-bottom: 1px solid
+    var(--border-color);
+}

@@ -80,6 +80,47 @@ function startExplorerWatcher() {
       minimized
     } = explorerData;
 
+      // Send folder path to sidebar
+if (
+  sidebarWindow &&
+  !sidebarWindow.isDestroyed()
+) {
+
+  // Wait until sidebar page fully loads
+  if (
+    sidebarWindow.webContents.isLoading()
+  ) {
+
+    sidebarWindow.webContents.once(
+      "did-finish-load",
+      () => {
+
+        sidebarWindow.webContents.send(
+          "explorer-path-update",
+          path
+        );
+
+        console.log(
+          "Sending to sidebar:",
+          path
+        );
+      }
+    );
+
+  } else {
+
+    sidebarWindow.webContents.send(
+      "explorer-path-update",
+      path
+    );
+
+    console.log(
+      "Sending to sidebar:",
+      path
+    );
+  }
+}
+
     // Position sidebar
     sidebarWindow.setBounds({
       x: x + width,
