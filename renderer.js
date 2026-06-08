@@ -33,9 +33,9 @@ const previewBody = document.getElementById("preview-body");
 function initSettings() {
   // 1. Theme Configuration
   const savedTheme = localStorage.getItem("theme") || "dark";
+  document.body.setAttribute("data-theme", savedTheme);
   if (themeSelect) {
     themeSelect.value = savedTheme;
-    document.body.setAttribute("data-theme", savedTheme);
     themeSelect.addEventListener("change", () => {
       const newTheme = themeSelect.value;
       document.body.setAttribute("data-theme", newTheme);
@@ -197,7 +197,9 @@ async function openRootFolder(folderPath) {
   if (!folderPath) return;
 
   currentRootPath = folderPath;
-  pathDisplay.textContent = folderPath;
+  if (pathDisplay) {
+    pathDisplay.textContent = folderPath;
+  }
   
   // Clear states, selection, and caches
   selectedFilePath = null;
@@ -217,20 +219,23 @@ async function openRootFolder(folderPath) {
 
 // Reset preview panel UI to empty state
 function resetPreviewPanel() {
-  previewTitle.textContent = "No file selected";
-  openFileBtn.disabled = true;
-  previewMeta.innerHTML = "";
-  previewBody.innerHTML = `
-    <div class="empty-preview-state">
-      <span class="empty-preview-icon">👁️</span>
-      <p>Select a file from the tree to view its preview and details.</p>
-    </div>
-  `;
+  if (previewTitle) previewTitle.textContent = "No file selected";
+  if (openFileBtn) openFileBtn.disabled = true;
+  if (previewMeta) previewMeta.innerHTML = "";
+  if (previewBody) {
+    previewBody.innerHTML = `
+      <div class="empty-preview-state">
+        <span class="empty-preview-icon">👁️</span>
+        <p>Select a file from the tree to view its preview and details.</p>
+      </div>
+    `;
+  }
 }
 
 // Render Folder Tree
 function renderTree() {
   if (!currentRootPath) return;
+  if (!treeContainer) return;
   treeContainer.innerHTML = "";
   
   try {
@@ -373,6 +378,12 @@ function buildTreeNode(itemPath) {
       selectedFilePath = itemPath;
       showFilePreview(itemPath);
     });
+
+    // Handle double-click to open file directly in system default app
+    headerDiv.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      shell.openPath(itemPath);
+    });
   }
 
   return itemDiv;
@@ -435,15 +446,15 @@ function showFilePreview(filePath) {
   const ext = path.extname(fileName).toLowerCase();
   
   // Enable header button
-  openFileBtn.disabled = false;
-  previewTitle.textContent = fileName;
+  if (openFileBtn) openFileBtn.disabled = false;
+  if (previewTitle) previewTitle.textContent = fileName;
 
   // Read stats
   let stat;
   try {
     stat = fs.statSync(filePath);
   } catch (e) {
-    previewMeta.innerHTML = `<span style="color:var(--danger-color);">Error reading file stats.</span>`;
+    if (previewMeta) previewMeta.innerHTML = `<span style="color:var(--danger-color);">Error reading file stats.</span>`;
     return;
   }
 
@@ -451,135 +462,139 @@ function showFilePreview(filePath) {
   const sizeStr = formatBytes(stat.size);
   const mtimeStr = formatDate(stat.mtime);
   
-  previewMeta.innerHTML = `
-    <div class="meta-row copy-path-row">
-      <span class="meta-key">Full Path:</span>
-      <span class="meta-val" style="font-family:monospace; font-size:11px;">${filePath}</span>
-      <button class="copy-btn" id="copy-path-btn">
-        📋 Copy
-        <span class="copy-tooltip" id="copy-tip">Copied!</span>
-      </button>
-    </div>
-    <div class="meta-row">
-      <span class="meta-key">File Size:</span>
-      <span class="meta-val">${sizeStr}</span>
-    </div>
-    <div class="meta-row">
-      <span class="meta-key">Modified Date:</span>
-      <span class="meta-val">${mtimeStr}</span>
-    </div>
-  `;
+  if (previewMeta) {
+    previewMeta.innerHTML = `
+      <div class="meta-row copy-path-row">
+        <span class="meta-key">Full Path:</span>
+        <span class="meta-val" style="font-family:monospace; font-size:11px;">${filePath}</span>
+        <button class="copy-btn" id="copy-path-btn">
+          📋 Copy
+          <span class="copy-tooltip" id="copy-tip">Copied!</span>
+        </button>
+      </div>
+      <div class="meta-row">
+        <span class="meta-key">File Size:</span>
+        <span class="meta-val">${sizeStr}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-key">Modified Date:</span>
+        <span class="meta-val">${mtimeStr}</span>
+      </div>
+    `;
 
-  // Attach copy path action
-  const copyBtn = document.getElementById("copy-path-btn");
-  if (copyBtn) {
-    copyBtn.addEventListener("click", () => {
-      navigator.clipboard.writeText(filePath).then(() => {
-        const tooltip = document.getElementById("copy-tip");
-        if (tooltip) {
-          copyBtn.classList.add("show-tooltip");
-          setTimeout(() => {
-            copyBtn.classList.remove("show-tooltip");
-          }, 1500);
-        }
+    // Attach copy path action
+    const copyBtn = document.getElementById("copy-path-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(filePath).then(() => {
+          const tooltip = document.getElementById("copy-tip");
+          if (tooltip) {
+            copyBtn.classList.add("show-tooltip");
+            setTimeout(() => {
+              copyBtn.classList.remove("show-tooltip");
+            }, 1500);
+          }
+        });
       });
-    });
+    }
   }
 
   // Clear and load Preview Content body
-  previewBody.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);">Loading preview...</div>`;
+  if (previewBody) {
+    previewBody.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);">Loading preview...</div>`;
 
-  // Images
-  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) {
-    previewBody.innerHTML = `
-      <div class="image-preview-wrapper">
-        <img src="file:///${filePath.replace(/\\/g, '/')}" alt="${fileName}">
-      </div>
-    `;
-  }
-  // Audio players
-  else if ([".mp3", ".wav", ".ogg"].includes(ext)) {
-    previewBody.innerHTML = `
-      <div class="audio-preview-wrapper">
-        <span class="media-icon">🎵</span>
-        <audio controls src="file:///${filePath.replace(/\\/g, '/')}"></audio>
-      </div>
-    `;
-  }
-  // Video players
-  else if ([".mp4", ".webm", ".mkv"].includes(ext)) {
-    previewBody.innerHTML = `
-      <div class="video-preview-wrapper">
-        <video controls src="file:///${filePath.replace(/\\/g, '/')}"></video>
-      </div>
-    `;
-  }
-  // Text & Code files
-  else if ([".js", ".ts", ".json", ".html", ".css", ".md", ".py", ".cpp", ".h", ".txt", ".ini", ".cfg", ".xml", ".yaml", ".yml", ".bat", ".sh"].includes(ext)) {
-    try {
-      // Handle huge text files gracefully: read max 50KB
-      const fd = fs.openSync(filePath, "r");
-      const buffer = Buffer.alloc(50000);
-      const bytesRead = fs.readSync(fd, buffer, 0, 50000, 0);
-      let content = buffer.toString("utf8", 0, bytesRead);
-      fs.closeSync(fd);
-
-      if (stat.size > 50000) {
-        content += "\n\n... [Truncated! File size exceeds 50KB limit] ...";
-      }
-
-      const escaped = escapeHTML(content);
-      const lines = escaped.split("\n");
-      const lineNumbers = lines.map((_, index) => index + 1).join("<br>");
-      
+    // Images
+    if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) {
       previewBody.innerHTML = `
-        <div class="code-preview-wrapper">
-          <div class="code-line-numbers">${lineNumbers}</div>
-          <div class="code-content">${escaped}</div>
+        <div class="image-preview-wrapper">
+          <img src="file:///${filePath.replace(/\\/g, '/')}" alt="${fileName}">
         </div>
       `;
-    } catch (e) {
-      previewBody.innerHTML = `<p style="color:var(--danger-color);">Could not read text preview: ${e.message}</p>`;
     }
-  }
-  // PDFs, Microsoft Documents, Spreadsheet, Slides
-  else {
-    let docEmoji = "📝";
-    let docType = "Generic File";
-    let docColor = "var(--text-muted)";
-    
-    if (ext === ".pdf") {
-      docEmoji = "📕";
-      docType = "PDF Document";
-      docColor = "var(--danger-color)";
-    } else if ([".doc", ".docx"].includes(ext)) {
-      docEmoji = "📘";
-      docType = "Word Document";
-      docColor = "#3b82f6";
-    } else if ([".xls", ".xlsx", ".csv"].includes(ext)) {
-      docEmoji = "📗";
-      docType = "Excel Spreadsheet";
-      docColor = "var(--success-color)";
-    } else if ([".ppt", ".pptx"].includes(ext)) {
-      docEmoji = "📙";
-      docType = "PowerPoint Presentation";
-      docColor = "#f97316";
+    // Audio players
+    else if ([".mp3", ".wav", ".ogg"].includes(ext)) {
+      previewBody.innerHTML = `
+        <div class="audio-preview-wrapper">
+          <span class="media-icon">🎵</span>
+          <audio controls src="file:///${filePath.replace(/\\/g, '/')}"></audio>
+        </div>
+      `;
     }
+    // Video players
+    else if ([".mp4", ".webm", ".mkv"].includes(ext)) {
+      previewBody.innerHTML = `
+        <div class="video-preview-wrapper">
+          <video controls src="file:///${filePath.replace(/\\/g, '/')}"></video>
+        </div>
+      `;
+    }
+    // Text & Code files
+    else if ([".js", ".ts", ".json", ".html", ".css", ".md", ".py", ".cpp", ".h", ".txt", ".ini", ".cfg", ".xml", ".yaml", ".yml", ".bat", ".sh"].includes(ext)) {
+      try {
+        // Handle huge text files gracefully: read max 50KB
+        const fd = fs.openSync(filePath, "r");
+        const buffer = Buffer.alloc(50000);
+        const bytesRead = fs.readSync(fd, buffer, 0, 50000, 0);
+        let content = buffer.toString("utf8", 0, bytesRead);
+        fs.closeSync(fd);
 
-    previewBody.innerHTML = `
-      <div class="document-placeholder-card">
-        <span class="document-icon" style="color:${docColor};">${docEmoji}</span>
-        <div class="document-info-title">${docType}</div>
-        <div class="document-info-desc">A direct interactive preview is not available in-app. Click the button below to launch it using your system's default program.</div>
-        <button class="open-external-btn" id="card-open-btn">Open File</button>
-      </div>
-    `;
+        if (stat.size > 50000) {
+          content += "\n\n... [Truncated! File size exceeds 50KB limit] ...";
+        }
 
-    const cardOpenBtn = document.getElementById("card-open-btn");
-    if (cardOpenBtn) {
-      cardOpenBtn.addEventListener("click", () => {
-        shell.openPath(filePath);
-      });
+        const escaped = escapeHTML(content);
+        const lines = escaped.split("\n");
+        const lineNumbers = lines.map((_, index) => index + 1).join("<br>");
+        
+        previewBody.innerHTML = `
+          <div class="code-preview-wrapper">
+            <div class="code-line-numbers">${lineNumbers}</div>
+            <div class="code-content">${escaped}</div>
+          </div>
+        `;
+      } catch (e) {
+        previewBody.innerHTML = `<p style="color:var(--danger-color);">Could not read text preview: ${e.message}</p>`;
+      }
+    }
+    // PDFs, Microsoft Documents, Spreadsheet, Slides
+    else {
+      let docEmoji = "📝";
+      let docType = "Generic File";
+      let docColor = "var(--text-muted)";
+      
+      if (ext === ".pdf") {
+        docEmoji = "📕";
+        docType = "PDF Document";
+        docColor = "var(--danger-color)";
+      } else if ([".doc", ".docx"].includes(ext)) {
+        docEmoji = "📘";
+        docType = "Word Document";
+        docColor = "#3b82f6";
+      } else if ([".xls", ".xlsx", ".csv"].includes(ext)) {
+        docEmoji = "📗";
+        docType = "Excel Spreadsheet";
+        docColor = "var(--success-color)";
+      } else if ([".ppt", ".pptx"].includes(ext)) {
+        docEmoji = "📙";
+        docType = "PowerPoint Presentation";
+        docColor = "#f97316";
+      }
+
+      previewBody.innerHTML = `
+        <div class="document-placeholder-card">
+          <span class="document-icon" style="color:${docColor};">${docEmoji}</span>
+          <div class="document-info-title">${docType}</div>
+          <div class="document-info-desc">A direct interactive preview is not available in-app. Click the button below to launch it using your system's default program.</div>
+          <button class="open-external-btn" id="card-open-btn">Open File</button>
+        </div>
+      `;
+
+      const cardOpenBtn = document.getElementById("card-open-btn");
+      if (cardOpenBtn) {
+        cardOpenBtn.addEventListener("click", () => {
+          shell.openPath(filePath);
+        });
+      }
     }
   }
 }
@@ -651,12 +666,14 @@ function updatePinButtonState() {
 }
 
 // Event Listeners Setup
-btnSelectFolder.addEventListener("click", async () => {
-  const folderPath = await ipcRenderer.invoke("select-folder");
-  if (folderPath) {
-    openRootFolder(folderPath);
-  }
-});
+if (btnSelectFolder) {
+  btnSelectFolder.addEventListener("click", async () => {
+    const folderPath = await ipcRenderer.invoke("select-folder");
+    if (folderPath) {
+      openRootFolder(folderPath);
+    }
+  });
+}
 
 if (pinBtn) {
   pinBtn.addEventListener("click", () => {
