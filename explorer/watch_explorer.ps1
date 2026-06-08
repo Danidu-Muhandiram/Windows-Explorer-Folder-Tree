@@ -21,6 +21,17 @@ public class WinAPI {
         IntPtr hWnd
     );
 
+    //Moves and resizes window
+    [DllImport("user32.dll")]
+    public static extern bool MoveWindow(
+        IntPtr hWnd,
+        int X,
+        int Y,
+        int nWidth,
+        int nHeight,
+        bool bRepaint
+    );
+
     //Rectangle structure for window bounds
     public struct RECT {
         public int Left;
@@ -42,6 +53,13 @@ $lastState = ""
 # Store last active Explorer handle
 # Helps detect minimize reliably
 $lastExplorerHandle = 0
+
+# Store docked Explorer handle
+# Prevents repeated shrinking
+$dockedExplorerHandle = 0
+
+# Fixed sidebar width
+$sidebarWidth = 320
 
 # Infinite loop
 # Keeps watching File Explorer forever
@@ -92,9 +110,9 @@ while ($true) {
 
                         # Get current Explorer window bounds
                         [WinAPI]::GetWindowRect(
-                        [IntPtr]$window.HWND,
-                        [ref]$rect
-                    ) | Out-Null
+                            [IntPtr]$window.HWND,
+                            [ref]$rect
+                        ) | Out-Null
 
                         # Calculate Explorer width
                         $width = $rect.Right - $rect.Left
@@ -102,11 +120,52 @@ while ($true) {
                         # Calculate Explorer height
                         $height = $rect.Bottom - $rect.Top
 
+                        # Dock Explorer only once
+                        if ($window.HWND -ne $dockedExplorerHandle) {
+
+                            # Shrink Explorer width
+                            $newWidth =
+                                $width - $sidebarWidth
+
+                            # Prevent very small sizes
+                            if ($newWidth -gt 500) {
+
+                                # Resize Explorer window
+                                [WinAPI]::MoveWindow(
+                                    [IntPtr]$window.HWND,
+                                    $rect.Left,
+                                    $rect.Top,
+                                    $newWidth,
+                                    $height,
+                                    $true
+                                ) | Out-Null
+
+                                # Save docked Explorer handle
+                                # Prevents repeated shrinking
+                                $dockedExplorerHandle =
+                                    $window.HWND
+
+                                # Refresh window bounds after resize
+                                [WinAPI]::GetWindowRect(
+                                    [IntPtr]$window.HWND,
+                                    [ref]$rect
+                                ) | Out-Null
+
+                                # Recalculate Explorer width
+                                $width =
+                                    $rect.Right - $rect.Left
+
+                                # Recalculate Explorer height
+                                $height =
+                                    $rect.Bottom - $rect.Top
+                            }
+                        }
+
                         # Check if Explorer is minimized
                         $isMinimized =
-                        [WinAPI]::IsIconic(
-                            [IntPtr]$window.HWND
-                        )
+                            [WinAPI]::IsIconic(
+                                [IntPtr]$window.HWND
+                            )
 
                         # Create Explorer state object
                         # Contains path + window position + size
