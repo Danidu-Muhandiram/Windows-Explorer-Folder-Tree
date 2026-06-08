@@ -6,6 +6,8 @@ const path = require("path");
 const { spawn } = require("child_process");
 // store the Electron window
 let win;
+let sidebarWindow;
+const SIDEBAR_WIDTH = 320;
 //store the PowerShell watcher process
 let explorerWatcher;
 
@@ -24,6 +26,21 @@ function createWindow() {
 
   // load index.html into the window
   win.loadFile("index.html");
+
+  sidebarWindow = new BrowserWindow({
+  width: 320,
+  height: 600,
+  frame: false,
+  resizable: false,
+  show: false,
+  alwaysOnTop: true,
+  webPreferences: {
+    nodeIntegration: true,
+    contextIsolation: false
+  }
+});
+
+sidebarWindow.loadFile("sidebar.html");
   // Start watching File Explorer paths
   startExplorerWatcher();
 }
@@ -49,26 +66,50 @@ function startExplorerWatcher() {
   // Listen for output from PowerShell
   explorerWatcher.stdout.on("data", (data) => {
 
-    try {
+  try {
 
-        // Convert incoming data into text
-        // trim() removes extra spaces/new lines
-        // JSON.parse() converts JSON text into JavaScript object
-        const explorerData =
-            JSON.parse(data.toString().trim());
+    const explorerData =
+      JSON.parse(data.toString().trim());
 
-        // Print converted object in terminal
-        console.log(explorerData);
+    const {
+      x,
+      y,
+      width,
+      height,
+      path,
+      minimized
+    } = explorerData;
 
-    } catch (error) {
+    // Position sidebar
+    sidebarWindow.setBounds({
+      x: x + width,
+      y: y,
+      width: SIDEBAR_WIDTH,
+      height: height
+    });
 
-        // If JSON conversion fails,
-        // show error in console
-        console.error(
-            "Explorer JSON Error:",
-            error
-        );
+    // Hide sidebar if Explorer minimized
+    if (minimized) {
+
+      sidebarWindow.hide();
+      return;
     }
+
+    // Show sidebar when Explorer restored
+    if (!sidebarWindow.isVisible()) {
+
+      sidebarWindow.showInactive();
+    }
+
+    console.log(explorerData);
+
+  } catch (error) {
+
+    console.error(
+      "Explorer JSON Error:",
+      error
+    );
+  }
 
 });
 

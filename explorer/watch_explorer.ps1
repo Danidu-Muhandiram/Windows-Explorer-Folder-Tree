@@ -15,6 +15,12 @@ public class WinAPI {
         out RECT rect
     );
 
+    //Checks if window is minimized
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(
+        IntPtr hWnd
+    );
+
     //Rectangle structure for window bounds
     public struct RECT {
         public int Left;
@@ -32,6 +38,10 @@ $lastPath = ""
 # Store previous full explorer state
 # Used to avoid duplicate JSON output
 $lastState = ""
+
+# Store last active Explorer handle
+# Helps detect minimize reliably
+$lastExplorerHandle = 0
 
 # Infinite loop
 # Keeps watching File Explorer forever
@@ -60,13 +70,18 @@ while ($true) {
 
                 # Compare Explorer window handle with active window handle
                 # This ensures we only track the ACTIVE File Explorer window
-                if ($window.HWND -eq $foregroundHandle) {
+                if ($window.HWND -eq $foregroundHandle -or $window.HWND -eq $lastExplorerHandle) {
 
                     # Get folder path from Explorer window
                     $path = $window.Document.Folder.Self.Path
 
                     # If path exists
                     if ($path) {
+
+                        # Save current Explorer handle
+                        # Used when Explorer loses focus
+                        $lastExplorerHandle =
+                            $window.HWND
 
                         # Save current folder path
                         $activePath = $path
@@ -77,9 +92,9 @@ while ($true) {
 
                         # Get current Explorer window bounds
                         [WinAPI]::GetWindowRect(
-                            $foregroundWindow,
-                            [ref]$rect
-                        ) | Out-Null
+                        [IntPtr]$window.HWND,
+                        [ref]$rect
+                    ) | Out-Null
 
                         # Calculate Explorer width
                         $width = $rect.Right - $rect.Left
@@ -87,15 +102,22 @@ while ($true) {
                         # Calculate Explorer height
                         $height = $rect.Bottom - $rect.Top
 
+                        # Check if Explorer is minimized
+                        $isMinimized =
+                        [WinAPI]::IsIconic(
+                            [IntPtr]$window.HWND
+                        )
+
                         # Create Explorer state object
                         # Contains path + window position + size
                         $state = @{
-                            hwnd = $foregroundHandle
+                            hwnd = $window.HWND
                             path = $activePath
                             x = $rect.Left
                             y = $rect.Top
                             width = $width
                             height = $height
+                            minimized = $isMinimized
                         }
 
                         # Convert object into JSON string
