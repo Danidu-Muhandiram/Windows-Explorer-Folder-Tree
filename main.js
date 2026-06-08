@@ -49,17 +49,28 @@ function startExplorerWatcher() {
   // Listen for output from PowerShell
   explorerWatcher.stdout.on("data", (data) => {
 
-    // convert output into readable text
-    const explorerPath = data.toString().trim();
+    try {
 
-    // print current explorer path in terminal
-    console.log("Explorer Path:", explorerPath);
+        // Convert incoming data into text
+        // trim() removes extra spaces/new lines
+        // JSON.parse() converts JSON text into JavaScript object
+        const explorerData =
+            JSON.parse(data.toString().trim());
 
-    // later:
-    // send to renderer
-    // update tree
-    // move sidebar
-  });
+        // Print converted object in terminal
+        console.log(explorerData);
+
+    } catch (error) {
+
+        // If JSON conversion fails,
+        // show error in console
+        console.error(
+            "Explorer JSON Error:",
+            error
+        );
+    }
+
+});
 
   // If PowerShell gives an error, log it
   explorerWatcher.stderr.on("data", (err) => {
