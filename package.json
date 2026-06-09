@@ -1,11 +1,23 @@
 {
   "name": "folder-tree",
   "version": "1.0.0",
-  "description": "��#\u0000 \u0000W\u0000i\u0000n\u0000d\u0000o\u0000w\u0000s\u0000-\u0000E\u0000x\u0000p\u0000l\u0000o\u0000r\u0000e\u0000r\u0000-\u0000F\u0000o\u0000l\u0000d\u0000e\u0000r\u0000-\u0000T\u0000r\u0000e\u0000e\u0000\r\u0000 \u0000",
+  "description": "Windows Explorer Folder Tree sidebar integration app",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "build": "electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "build": {
+    "appId": "com.foldertree.explorer",
+    "productName": "Folder Tree Explorer",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "directories": {
+      "output": "release"
+    }
   },
   "repository": {
     "type": "git",
@@ -19,7 +31,8 @@
   },
   "homepage": "https://github.com/Danidu-Muhandiram/Windows-Explorer-Folder-Tree#readme",
   "devDependencies": {
-    "electron": "^42.3.2"
+    "electron": "^42.3.2",
+    "electron-builder": "^26.15.2"
   },
   "dependencies": {
     "node-window-manager": "^2.2.4"

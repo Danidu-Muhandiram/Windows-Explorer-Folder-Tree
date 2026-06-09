@@ -55,6 +55,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1000,
     height: 650,
+    minWidth: 800,
+    minHeight: 500,
     // browser settings
     webPreferences: {
       nodeIntegration: true,// allow Node.js in renderer

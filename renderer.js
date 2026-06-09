@@ -379,8 +379,10 @@ function buildTreeNode(itemPath) {
       selectedFilePath = itemPath;
       showFilePreview(itemPath);
 
-      // Open the file in the default program immediately on single-click
-      shell.openPath(itemPath);
+      // Open the file in the default program immediately on single-click (sidebar mode only)
+      if (document.body.classList.contains("sidebar-mode")) {
+        shell.openPath(itemPath);
+      }
     });
   }
 
