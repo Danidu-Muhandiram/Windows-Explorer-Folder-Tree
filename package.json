@@ -1,39 +1,89 @@
 {
   "name": "folder-tree",
   "version": "1.0.0",
-  "description": "Windows Explorer Folder Tree sidebar integration app",
+  "description": "Smart folder navigation for Windows Explorer.",
   "main": "main.js",
+
+  "author": "D. Muhandiram",
+  "license": "ISC",
+
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+
   "build": {
-    "appId": "com.foldertree.explorer",
+    "appId": "com.foldertree.app",
     "productName": "Folder Tree Explorer",
+    "executableName": "FolderTreeExplorer",
+    "copyright": "Copyright © 2026 D. Muhandiram",
+
+    "directories": {
+      "output": "release"
+    },
+
+    "files": [
+      "**/*",
+      "!release/**/*",
+      "!node_modules/.cache/**/*",
+      "!*.md"
+    ],
+
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"
     },
-    "directories": {
-      "output": "release"
+
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Folder Tree Explorer",
+
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+
+      "installerSidebar": "assets/installerSidebar.bmp",
+      "installerHeader": "assets/installerHeader.bmp",
+
+      "runAfterFinish": true,
+      "displayLanguageSelector": false,
+
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     }
   },
+
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Danidu-Muhandiram/Windows-Explorer-Folder-Tree.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+
   "bugs": {
     "url": "https://github.com/Danidu-Muhandiram/Windows-Explorer-Folder-Tree/issues"
   },
+
   "homepage": "https://github.com/Danidu-Muhandiram/Windows-Explorer-Folder-Tree#readme",
+
+  "keywords": [
+    "electron",
+    "windows-explorer",
+    "folder-tree",
+    "file-explorer",
+    "sidebar",
+    "desktop-app",
+    "windows",
+    "folder-navigation"
+  ],
+
   "devDependencies": {
     "electron": "^42.3.2",
     "electron-builder": "^26.15.2"
   },
+
   "dependencies": {
     "node-window-manager": "^2.2.4"
   }
