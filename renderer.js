@@ -378,11 +378,8 @@ function buildTreeNode(itemPath) {
       
       selectedFilePath = itemPath;
       showFilePreview(itemPath);
-    });
 
-    // Handle double-click to open file directly in system default app
-    headerDiv.addEventListener("dblclick", (e) => {
-      e.stopPropagation();
+      // Open the file in the default program immediately on single-click
       shell.openPath(itemPath);
     });
   }

@@ -113,7 +113,7 @@ while ($true) {
             }
         }
 
-        # Check standard input for exit command from Electron (non-blocking)
+        # Check standard input for commands from Electron (non-blocking)
         $hStdin = [WinAPI]::GetStdHandle(-10) # STD_INPUT_HANDLE
         $bytesAvail = 0
         $res = [WinAPI]::PeekNamedPipe($hStdin, [IntPtr]::Zero, 0, [IntPtr]::Zero, [ref]$bytesAvail, [IntPtr]::Zero)
@@ -121,6 +121,27 @@ while ($true) {
             $line = [System.Console]::In.ReadLine()
             if ($line -eq "exit") {
                 break
+            }
+            elseif ($line -like "navigate *") {
+                $parts = $line.Substring(9).Split("|")
+                if ($parts.Length -eq 2) {
+                    $targetHwnd = [int64]$parts[0]
+                    $targetPath = $parts[1]
+
+                    # Find the target Explorer window and navigate
+                    $tempShell = New-Object -ComObject Shell.Application
+                    $tempWindows = $tempShell.Windows()
+                    foreach ($w in $tempWindows) {
+                        if ($w.HWND -eq $targetHwnd) {
+                            try {
+                                $w.Navigate($targetPath)
+                            } catch {}
+                            break
+                        }
+                    }
+                    if ($tempWindows) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($tempWindows) | Out-Null }
+                    if ($tempShell) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($tempShell) | Out-Null }
+                }
             }
         }
 

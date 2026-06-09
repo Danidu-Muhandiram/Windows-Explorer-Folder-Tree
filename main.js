@@ -4,6 +4,8 @@ const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 // import spawn to run powershell script
 const { spawn } = require("child_process");
+// import fs module
+const fs = require("fs");
 // store the Electron window
 let win;
 let sidebarWindow;
@@ -11,6 +13,7 @@ const SIDEBAR_WIDTH = 320;
 //store the PowerShell watcher process
 let explorerWatcher;
 let lastExplorerActive = false;
+let lastExplorerHandle = null;
 
 // Helper to dynamically update sidebar's alwaysOnTop behavior
 function updateSidebarAlwaysOnTop(isExplorerActive) {
@@ -121,10 +124,12 @@ function startExplorerWatcher() {
           if (sidebarWindow && !sidebarWindow.isDestroyed()) {
             sidebarWindow.hide();
           }
+          lastExplorerHandle = null;
           continue;
         }
 
         const {
+          hwnd,
           x,
           y,
           width,
@@ -135,6 +140,7 @@ function startExplorerWatcher() {
         } = explorerData;
 
         // Save active state globally for blur/focus handling
+        lastExplorerHandle = hwnd;
         lastExplorerActive = !!isActive;
 
         // Send folder path to sidebar
@@ -236,6 +242,8 @@ ipcMain.on("theme-changed", (event, theme) => {
     sidebarWindow.webContents.send("theme-updated", theme);
   }
 });
+
+
 
 // When Electron app is ready
 app.whenReady().then(createWindow);

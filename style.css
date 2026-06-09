@@ -566,18 +566,21 @@ select:focus {
 
 .meta-row {
   display: flex;
-  justify-content: space-between;
+  align-items: baseline;
   gap: 12px;
+  margin-bottom: 4px;
 }
 
 .meta-key {
   font-weight: 500;
   color: var(--text-muted);
+  min-width: 90px;
+  flex-shrink: 0;
 }
 
 .meta-val {
   color: var(--text-main);
-  text-align: right;
+  text-align: left;
   word-break: break-all;
 }
 
@@ -585,14 +588,15 @@ select:focus {
 .copy-path-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  width: 100%;
 }
 
 .copy-btn {
   font-size: 11px;
   padding: 2px 6px;
   border-radius: var(--border-radius-sm);
+  margin-left: auto;
+  flex-shrink: 0;
   background-color: var(--panel-bg);
   border: 1px solid var(--panel-border);
   cursor: pointer;
