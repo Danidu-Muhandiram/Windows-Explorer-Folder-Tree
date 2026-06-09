@@ -40,6 +40,7 @@ function initSettings() {
       const newTheme = themeSelect.value;
       document.body.setAttribute("data-theme", newTheme);
       localStorage.setItem("theme", newTheme);
+      ipcRenderer.send("theme-changed", newTheme);
     });
   }
 

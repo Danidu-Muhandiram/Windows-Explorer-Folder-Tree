@@ -808,24 +808,26 @@ body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
 .sidebar-mode {
   margin: 0;
   overflow: hidden;
+  background-color: var(--panel-bg);
 }
 
 .sidebar-app {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  border-left: 1px solid var(--panel-border);
 }
 
 .sidebar-top-controls {
   display: flex;
   gap: 8px;
   padding: 10px;
-  border-bottom: 1px solid
-    var(--border-color);
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .sidebar-top-controls select {
   flex: 1;
+  border-radius: var(--border-radius-sm);
 }
 
 .tree-panel {
@@ -833,7 +835,11 @@ body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   overflow-y: auto;
 }
 
-.path-bar {
-  border-bottom: 1px solid
-    var(--border-color);
+.sidebar-mode #tree-container {
+  padding: 12px;
+}
+
+.sidebar-mode .path-bar {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--panel-border);
 }
