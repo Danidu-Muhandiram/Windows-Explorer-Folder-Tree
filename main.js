@@ -1,5 +1,11 @@
 //import Electron modules
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  Menu
+} = require("electron");
 // import path module (used for file paths)
 const path = require("path");
 // import spawn to run powershell script
@@ -66,6 +72,9 @@ function createWindow() {
 
   // load index.html into the window
   win.loadFile("index.html");
+
+  // Remove default Electron menu
+  Menu.setApplicationMenu(null);
 
   sidebarWindow = new BrowserWindow({
     width: 320,
