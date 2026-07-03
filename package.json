@@ -30,6 +30,12 @@
       "!*.md"
     ],
 
+    "asar": true,
+    "asarUnpack": [
+      "explorer/**/*"
+    ],
+
+
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"

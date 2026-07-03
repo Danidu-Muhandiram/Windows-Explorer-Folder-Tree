@@ -106,11 +106,17 @@ function createWindow() {
 function startExplorerWatcher() {
 
   // Create full path to PowerShell script
-  const scriptPath = path.join(
+  let scriptPath = path.join(
     __dirname,// current project folder
     "explorer",// explorer folder
     "watch_explorer.ps1"// PowerShell file
   );
+
+  // If the application is built and packaged into an ASAR file,
+  // unpacked copy since PowerShell cannot run files directly inside ASAR
+  if (app.isPackaged) {
+    scriptPath = scriptPath.replace("app.asar", "app.asar.unpacked");
+  }
 
   // Run PowerShell script to watch File Explorer paths
   explorerWatcher = spawn("powershell.exe", [
