@@ -20,23 +20,6 @@ While the native Windows File Explorer is capable, it has several limitations fo
 
 ---
 
-## ✨ Main Application Features
-
-*   **⚡ Lazy-Loaded Folder Tree**: Seamlessly traverses huge directories. Subfolders are queried on demand upon tree expansion, preventing application freezes or memory bloating.
-*   **🔍 Type-Specific File Filters**: Filter the active folder tree instantly. Show only Images (PNG, JPG, SVG, GIF), PDF Documents, Word Documents, Excel/CSV Spreadsheets, or PowerPoint Presentations.
-*   **📊 Smart Sorting**: Group directories first and sort files by Name (A-Z or Z-A), Size (Smallest or Largest first), or Date Modified (Newest or Oldest first).
-*   **💾 Folder size caching**: Computes directory sizes in the background and caches the results, allowing instant rendering of folder sizes.
-*   **👁️ Rich In-App Previews**:
-    *   *Images*: Centered viewer with transparency check grids.
-    *   *Audio/Video*: Native HTML5 players with playback speed and volume controls.
-    *   *Code/Text*: Renders text/code files under 50KB with line numbering.
-    *   *Document Placeholders*: Shows clear metadata and action buttons to open unsupported documents (Word, Excel, PDF) in their native system programs.
-*   **📍 Favorites (Pinned Folders)**: Pin frequently accessed folder paths to the sidebar for quick switching. Favorites are persisted across sessions in `localStorage`.
-*   **📋 Clipboard Integration**: Copy absolute paths of any selected file or folder instantly.
-*   **🌗 Dynamic Theme Engine**: Toggle between Outfit-font-styled Light and Dark themes, with changes immediately synchronized across all window components.
-
----
-
 ## 🛠️ Technical Details & Architecture
 
 Folder Tree Explorer leverages Electron's multi-process architecture combined with a high-performance Windows API background watcher written in PowerShell.
