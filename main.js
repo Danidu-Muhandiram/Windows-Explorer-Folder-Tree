@@ -10,6 +10,7 @@ const {
 const path = require("path");
 // import spawn to run powershell script
 const { spawn } = require("child_process");
+const readline = require("readline");
 // import fs module
 const fs = require("fs");
 // store the Electron window
@@ -20,6 +21,11 @@ const SIDEBAR_WIDTH = 320;
 let explorerWatcher;
 let lastExplorerActive = false;
 let lastExplorerHandle = null;
+let lastExplorerPath = null;
+let watcherStopPromise = null;
+let readyToQuit = false;
+let quitRequested = false;
+let smartSidebarEnabled = false;
 
 // Helper to dynamically update sidebar's alwaysOnTop behavior
 function updateSidebarAlwaysOnTop(isExplorerActive) {
@@ -35,24 +41,36 @@ function updateSidebarAlwaysOnTop(isExplorerActive) {
 
 // Helper to stop the explorer watcher cleanly
 function stopExplorerWatcher() {
-  if (explorerWatcher) {
-    const watcher = explorerWatcher;
-    explorerWatcher = null;
+  if (watcherStopPromise) return watcherStopPromise;
+  if (!explorerWatcher) return Promise.resolve();
+
+  const watcher = explorerWatcher;
+  watcherStopPromise = new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      try { watcher.kill(); } catch (error) { console.error(error); }
+      resolve();
+    }, 2000);
+    watcher.once("close", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
     try {
-      watcher.stdin.write("exit\n");
-    } catch (e) {
-      console.error("Error writing exit to watcher stdin:", e);
+      watcher.stdin.write("exit\n", (error) => {
+        if (error) console.error("Could not stop Explorer watcher:", error);
+      });
+    } catch (error) {
+      console.error("Could not stop Explorer watcher:", error);
     }
-    
-    // Fallback force kill after 1 second if it doesn't exit cleanly
-    setTimeout(() => {
-      try {
-        if (!watcher.killed) {
-          watcher.kill();
-        }
-      } catch (e) {}
-    }, 1000);
-  }
+  }).finally(() => {
+    if (explorerWatcher === watcher) {
+      explorerWatcher = null;
+      lastExplorerPath = null;
+      lastExplorerHandle = null;
+      lastExplorerActive = false;
+    }
+    watcherStopPromise = null;
+  });
+  return watcherStopPromise;
 }
 
 // function to create the Electron app window
@@ -92,6 +110,19 @@ function createWindow() {
 
   sidebarWindow.loadFile("sidebar.html");
 
+  // The hidden sidebar must not keep the application alive after its main window closes.
+  win.on("closed", () => {
+    win = null;
+    app.quit();
+  });
+
+  // Send only the latest path if Explorer changes while the sidebar is loading.
+  sidebarWindow.webContents.on("did-finish-load", () => {
+    if (smartSidebarEnabled && lastExplorerPath !== null && !watcherStopPromise && !quitRequested) {
+      sidebarWindow.webContents.send("explorer-path-update", lastExplorerPath);
+    }
+  });
+
   // Dynamic always-on-top z-order handling
   sidebarWindow.on("focus", () => {
     sidebarWindow.setAlwaysOnTop(true, "status");
@@ -126,76 +157,78 @@ function startExplorerWatcher() {
     scriptPath,
     process.pid.toString()
   ]);
+  const watcher = explorerWatcher;
+  lastExplorerHandle = null;
+  lastExplorerPath = null;
 
-  // Listen for output from PowerShell
-  explorerWatcher.stdout.on("data", (data) => {
-    const lines = data.toString().split("\n");
-    for (let line of lines) {
-      line = line.trim();
-      if (!line) continue;
+  watcher.on("error", (error) => console.error("Explorer watcher error:", error));
+  watcher.stdin.on("error", (error) => console.error("Explorer watcher input error:", error));
 
-      try {
-        const explorerData = JSON.parse(line);
+  // readline buffers partial lines and decodes UTF-8 across stdout chunks.
+  const lines = readline.createInterface({ input: watcher.stdout, crlfDelay: Infinity });
+  lines.on("line", (line) => {
+    if (explorerWatcher !== watcher || watcherStopPromise || !line.trim()) return;
 
-        if (explorerData.closed) {
-          if (sidebarWindow && !sidebarWindow.isDestroyed()) {
-            sidebarWindow.hide();
-          }
-          lastExplorerHandle = null;
-          continue;
-        }
+    try {
+      const explorerData = JSON.parse(line);
 
-        const {
-          hwnd,
-          x,
-          y,
-          width,
-          height,
-          path,
-          minimized,
-          isActive
-        } = explorerData;
-
-        // Save active state globally for blur/focus handling
-        lastExplorerHandle = hwnd;
-        lastExplorerActive = !!isActive;
-
-        // Send folder path to sidebar
+      if (explorerData.closed) {
         if (sidebarWindow && !sidebarWindow.isDestroyed()) {
-          // Wait until sidebar page fully loads
-          if (sidebarWindow.webContents.isLoading()) {
-            sidebarWindow.webContents.once("did-finish-load", () => {
-              sidebarWindow.webContents.send("explorer-path-update", path);
-            });
-          } else {
-            sidebarWindow.webContents.send("explorer-path-update", path);
-          }
-
-          // Position sidebar
-          sidebarWindow.setBounds({
-            x: x + width,
-            y: y,
-            width: SIDEBAR_WIDTH,
-            height: height
-          });
-
-          // Hide sidebar if Explorer minimized
-          if (minimized) {
-            sidebarWindow.hide();
-            continue;
-          }
-
-          // Show sidebar when Explorer restored
-          if (!sidebarWindow.isVisible()) {
-            sidebarWindow.showInactive();
-          }
-
-          // Dynamic always-on-top updates
-          updateSidebarAlwaysOnTop(isActive);
+          sidebarWindow.hide();
         }
-      } catch (error) {
-        console.error("Explorer JSON parse line error:", error, "on line:", line);
+        lastExplorerHandle = null;
+        lastExplorerPath = null;
+        lastExplorerActive = false;
+        return;
       }
+
+      const {
+        hwnd,
+        x,
+        y,
+        width,
+        height,
+        path,
+        minimized,
+        isActive
+      } = explorerData;
+
+      // Save active state globally for blur/focus handling
+      lastExplorerActive = !!isActive;
+
+      // Send folder path to sidebar
+      if (sidebarWindow && !sidebarWindow.isDestroyed()) {
+        const folderChanged = path !== lastExplorerPath || hwnd !== lastExplorerHandle;
+        lastExplorerHandle = hwnd;
+        lastExplorerPath = path;
+        if (folderChanged && !sidebarWindow.webContents.isLoading()) {
+          sidebarWindow.webContents.send("explorer-path-update", path);
+        }
+
+        // Position sidebar
+        sidebarWindow.setBounds({
+          x: x + width,
+          y: y,
+          width: SIDEBAR_WIDTH,
+          height: height
+        });
+
+        // Hide sidebar if Explorer minimized
+        if (minimized) {
+          sidebarWindow.hide();
+          return;
+        }
+
+        // Show sidebar when Explorer restored
+        if (!sidebarWindow.isVisible()) {
+          sidebarWindow.showInactive();
+        }
+
+        // Dynamic always-on-top updates
+        updateSidebarAlwaysOnTop(isActive);
+      }
+    } catch (error) {
+      console.error("Explorer JSON parse line error:", error, "on line:", line);
     }
   });
 
@@ -205,7 +238,15 @@ function startExplorerWatcher() {
   });
 
   // When watcher process closes
-  explorerWatcher.on("close", () => {
+  watcher.on("close", () => {
+    lines.close();
+    if (explorerWatcher === watcher) {
+      explorerWatcher = null;
+      lastExplorerPath = null;
+      lastExplorerHandle = null;
+      lastExplorerActive = false;
+      if (sidebarWindow && !sidebarWindow.isDestroyed()) sidebarWindow.hide();
+    }
     console.log("Explorer watcher stopped");
   });
 }
@@ -228,10 +269,14 @@ ipcMain.handle("select-folder", async () => {
 
 ipcMain.on(
   "toggle-smart-sidebar",
-  (_, enabled) => {
+  async (_, enabled) => {
+    smartSidebarEnabled = !!enabled;
 
     // Turn ON sidebar feature
     if (enabled) {
+
+      if (watcherStopPromise) await watcherStopPromise;
+      if (!smartSidebarEnabled || quitRequested || !win || win.isDestroyed()) return;
 
       if (!explorerWatcher) {
 
@@ -266,9 +311,15 @@ ipcMain.on("theme-changed", (event, theme) => {
 app.whenReady().then(createWindow);
 
 // Before Electron quits
-app.on("before-quit", () => {
-  // Stop PowerShell watcher cleanly (so Explorer size is restored)
-  stopExplorerWatcher();
+app.on("before-quit", (event) => {
+  quitRequested = true;
+  if (readyToQuit || (!explorerWatcher && !watcherStopPromise)) return;
+  event.preventDefault();
+  if (sidebarWindow && !sidebarWindow.isDestroyed()) sidebarWindow.hide();
+  stopExplorerWatcher().then(() => {
+    readyToQuit = true;
+    app.quit();
+  });
 });
 
 // When all windows are closed

@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/*.test.js"
   },
 
   "build": {
@@ -26,6 +26,7 @@
     "files": [
       "**/*",
       "!release/**/*",
+      "!tests/**/*",
       "!node_modules/.cache/**/*",
       "!*.md"
     ],

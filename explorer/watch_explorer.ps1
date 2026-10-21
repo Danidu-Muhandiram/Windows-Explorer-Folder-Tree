@@ -77,9 +77,8 @@ public class WinAPI {
 }
 "@
 
-# Store previously detected path
-# Used to avoid printing duplicate paths
-$lastPath = ""
+# Match Node's UTF-8 stream decoder, including paths with non-ASCII characters.
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
 # Store previous full explorer state
 # Used to avoid duplicate JSON output
@@ -88,10 +87,6 @@ $lastState = ""
 # Store last active Explorer handle
 # Helps detect minimize reliably
 $lastExplorerHandle = 0
-
-# Store docked Explorer handle
-# Prevents repeated shrinking
-$dockedExplorerHandle = 0
 
 # Fixed sidebar width
 $sidebarWidth = 320
@@ -165,6 +160,17 @@ while ($true) {
         $shell = New-Object -ComObject Shell.Application
         $windows = $shell.Windows()
 
+        # Forget closed windows so stale/reused handles are not restored at exit.
+        $openHandles = @{}
+        foreach ($openWindow in $windows) {
+            $openHandles[$openWindow.HWND] = $true
+        }
+        foreach ($trackedHandle in @($originalExplorerBounds.Keys)) {
+            if (-not $openHandles.ContainsKey($trackedHandle)) {
+                $originalExplorerBounds.Remove($trackedHandle)
+            }
+        }
+
         # Prioritize finding the active Explorer window first
         $targetWindow = $null
         if ($isExplorerActive) {
@@ -216,8 +222,8 @@ while ($true) {
                 $outerWidth = $outerRect.Right - $outerRect.Left
                 $outerHeight = $outerRect.Bottom - $outerRect.Top
 
-                # Dock Explorer only once
-                if ($targetWindow.HWND -ne $dockedExplorerHandle) {
+                # Original bounds also track docking independently for each window.
+                if (-not $originalExplorerBounds.ContainsKey($targetWindow.HWND)) {
 
                     # Shrink Explorer width
                     $newWidth = $outerWidth - $sidebarWidth
@@ -226,17 +232,24 @@ while ($true) {
                     if ($newWidth -gt 500) {
 
                         # Resize Explorer window using outer bounds
-                        [WinAPI]::MoveWindow(
+                        $didDock = [WinAPI]::MoveWindow(
                             [IntPtr]$targetWindow.HWND,
                             $outerRect.Left,
                             $outerRect.Top,
                             $newWidth,
                             $outerHeight,
                             $true
-                        ) | Out-Null
+                        )
 
-                        # Save docked Explorer handle
-                        $dockedExplorerHandle = $targetWindow.HWND
+                        # Track only successful resizes, retaining the pre-dock bounds.
+                        if ($didDock) {
+                            $originalExplorerBounds[$targetWindow.HWND] = @{
+                                x = $outerRect.Left
+                                y = $outerRect.Top
+                                width = $outerWidth
+                                height = $outerHeight
+                            }
+                        }
 
                         # Refresh visible window bounds after resize
                         $res = [WinAPI]::DwmGetWindowAttribute([IntPtr]$targetWindow.HWND, 9, [ref]$dwmRect, 16)
@@ -245,18 +258,6 @@ while ($true) {
                         } else {
                             [WinAPI]::GetWindowRect([IntPtr]$targetWindow.HWND, [ref]$rect) | Out-Null
                         }
-                    }
-                }
-
-                # Save original Explorer size (outer size)
-                # Used when restoring later
-                if (-not $originalExplorerBounds.ContainsKey($targetWindow.HWND)) {
-
-                    $originalExplorerBounds[$targetWindow.HWND] = @{
-                        x = $outerRect.Left
-                        y = $outerRect.Top
-                        width = $outerWidth
-                        height = $outerHeight
                     }
                 }
 
@@ -310,7 +311,6 @@ while ($true) {
                     $lastState = $json
                 }
                 $lastExplorerHandle = 0
-                $dockedExplorerHandle = 0
             }
         }
 
