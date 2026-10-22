@@ -28,6 +28,13 @@ test("preload exposes fixed capabilities and strips privileged event objects", a
   assert.deepEqual(received, ["C:/root"]);
   unsubscribe();
   assert.equal(ipc.listenerCount("explorer-path-update"), 0);
+  let progress;
+  const stopProgress = api.onScanProgress(value => { progress = value; });
+  ipc.emit("scan-progress", { sender: "privileged" }, { requestId: 7, scanned: 42 });
+  assert.deepEqual(progress, { requestId: 7, scanned: 42 });
+  stopProgress();
+  await api.cancelScan(7);
+  assert.deepEqual(calls.at(-1), ["cancel-scan", 7]);
 });
 
 test("both HTML pages enforce CSP and have no inline scripts or styles", () => {

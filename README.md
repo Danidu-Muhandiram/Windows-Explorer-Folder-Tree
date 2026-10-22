@@ -47,7 +47,28 @@ Each window has its own active browsing folder. Directory reads, bounded text pr
 
 The UI constructs dynamic content using DOM properties and `textContent`. Both pages enforce a Content Security Policy that blocks inline scripts, frames, plugins, forms, and network connections. The existing Google Fonts stylesheet and fonts remain allowed. Navigation away from the application pages, embedded webviews, and popup windows are blocked.
 
-Run `npm.cmd test` to exercise the security boundary and browsing regressions. These checks use mocked Electron windows and temporary filesystem fixtures; they do not replace manual testing of native Explorer docking and display scaling.
+Folder scanning, filtering, size calculation, sorting, and previews run in a dedicated worker thread for each window. Scan progress reports the number of entries checked rather than an estimated percentage. Use **Cancel** or **Escape** to stop a scan. Changing the root, refreshing, or collapsing a loading folder also cancels obsolete work. Traversal checks cancellation between filesystem operations; an operating-system request already in flight may still finish. Cancelled and incomplete calculations are not cached as complete results.
+
+Use **Refresh**, **F5**, or **Ctrl+R** to reread the active folder and clear scan caches. Expanded folders are restored, keyboard focus returns to the same row where possible, and the previous file preview is cleared. Tree navigation supports **Up/Down**, **Home/End**, **Right** to expand or enter a folder, **Left** to collapse or return to its parent, and **Enter/Space** to activate a row. Favorites use native buttons, and keyboard focus is visible on controls and tree rows. Access errors and cancelled scans offer retry actions; partial folder sizes are marked “At least”.
+
+Run `npm.cmd test` to exercise the security boundary and browsing regressions. The suite includes real worker scans, cancellation, junction cycles, keyboard interactions, and docking calculations at 100%, 125%, 150%, and 200% scaling with positive/negative monitor origins. An optional hidden-window Electron integration check is available with `node_modules\\electron\\dist\\electron.exe tests\\electron-smoke.cjs` (unset `ELECTRON_RUN_AS_NODE` if it is present). It uses temporary fixtures and an isolated profile, and writes its screenshot to `.cache/electron-smoke.png`.
+
+### Docking verification
+
+Win32 physical bounds are converted to Electron DIP bounds using the Explorer rectangle's display. The sidebar remains 320 DIP wide and is clamped to the display work area. The watcher reserves scaled physical space and reacts to window DPI changes; Electron repositions on display changes too.
+
+Automated coordinate and native-call mocks do not replace these hardware checks:
+
+| Scenario | Verify |
+| --- | --- |
+| One monitor at 100%, 125%, 150%, 200% | Sidebar alignment, readable controls, Explorer size restoration |
+| Two monitors with different scales | Move Explorer both ways, check alignment and reserved width |
+| Monitor left of or above primary | Negative coordinates, sidebar remains on the intended display |
+| Maximized/snapped Explorer | Sidebar visibility, minimum width, taskbar clearance |
+| Change scale or disconnect a monitor | Sidebar moves onto an available work area |
+| Minimize, restore, disable sidebar, quit | No stranded sidebar or repeatedly shrinking Explorer window |
+
+The development environment currently exposes one 1366×768 display. Mixed-monitor docking and the final corrected Electron smoke run still require manual verification.
 
 ### System Architecture
 

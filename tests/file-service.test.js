@@ -86,3 +86,15 @@ test("junctions cannot escape the active root and recursive cycles terminate", a
   assert.ok(!result.some(item => item.name === "escape"));
   assert.ok(!result.some(item => item.name === "cycle"));
 });
+
+test("cancelled recursive scans propagate aborts and never poison the size cache", async t => {
+  const { root, session } = await fixture(t);
+  await fs.mkdir(path.join(root, "folder"));
+  for (let index = 0; index < 10; index++) await fs.writeFile(path.join(root, "folder", `${index}.txt`), "123");
+  const controller = new AbortController();
+  await assert.rejects(session.readDirectory(root, options({ showSize: true }), {
+    signal: controller.signal,
+    onProgress(value) { if (value.scanned > 0) controller.abort(); }
+  }), /Scan cancelled/);
+  assert.equal((await session.readDirectory(root, options({ showSize: true })))[0].size, 30);
+});

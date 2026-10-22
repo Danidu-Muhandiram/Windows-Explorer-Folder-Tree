@@ -15,6 +15,9 @@ function createApp({ openPath = async () => "" } = {}) {
   const timers = new Map();
   const errors = [];
   const dialogs = [];
+  const screen = new EventEmitter();
+  screen.screenToDipRect = (_window, rect) => rect;
+  screen.getDisplayMatching = () => ({ workArea: { x: -10000, y: -10000, width: 20000, height: 20000 } });
   const app = new EventEmitter();
   app.whenReady = () => ({ then: (fn) => fn() });
   app.exited = false;
@@ -35,6 +38,7 @@ function createApp({ openPath = async () => "" } = {}) {
       this.messages = [];
       this.webContents = new EventEmitter();
       this.webContents.mainFrame = { url: "" };
+      this.webContents.isDestroyed = () => this.destroyed;
       this.webContents.setWindowOpenHandler = handler => { this.webContents.openHandler = handler; };
       this.webContents.session = { setPermissionRequestHandler() {} };
       this.webContents.loading = false;
@@ -57,7 +61,7 @@ function createApp({ openPath = async () => "" } = {}) {
       if (name === "electron") return {
         app, BrowserWindow: Window,
         ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on: (name, fn) => { handlers[name] = fn; } },
-        shell: { openPath },
+        shell: { openPath }, screen,
         dialog: { showErrorBox: (...args) => dialogs.push(args) }, Menu: { setApplicationMenu() {} }
       };
       if (name === "child_process") return { spawn() {
@@ -71,7 +75,12 @@ function createApp({ openPath = async () => "" } = {}) {
         watchers.push(watcher);
         return watcher;
       } };
-      return require(name === "./file-service" ? "../file-service" : name);
+      if (name === "./worker-client") return { createWorkerSession() {
+        const session = require("../file-service").createFileSession();
+        return { ...session, openRoot: (value, size) => session.openRoot(value, size),
+          readDirectory: (value, options) => session.readDirectory(value, options), cancel() {}, dispose() {} };
+      } };
+      return require(name.startsWith("./") ? "../" + name.slice(2) : name);
     },
     __dirname: path.resolve(__dirname, ".."), process,
     console: { log() {}, error: (...args) => errors.push(args) },
@@ -237,6 +246,7 @@ test("filesystem IPC rejects unknown senders, subframes and navigated documents"
     { sender: window.webContents, senderFrame: { url: window.webContents.mainFrame.url } }
   ]) {
     assert.throws(() => fixture.rawInvoke("browse-root", event, __dirname), /Unauthorized/);
+    assert.throws(() => fixture.rawInvoke("cancel-scan", event, 1), /Unauthorized/);
   }
   window.webContents.mainFrame.url = "https://example.com";
   assert.throws(() => fixture.invoke("browse-root", window, __dirname), /Unauthorized/);

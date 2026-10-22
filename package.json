@@ -27,7 +27,9 @@
     ],
     "asar": true,
     "asarUnpack": [
-      "explorer/**/*"
+      "explorer/**/*",
+      "file-worker.js",
+      "file-service.js"
     ],
     "win": {
       "target": "nsis",

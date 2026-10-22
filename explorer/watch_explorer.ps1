@@ -12,6 +12,12 @@ public class WinAPI {
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+
     // Gets window position and size
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(
@@ -79,6 +85,8 @@ public class WinAPI {
 
 # Match Node's UTF-8 stream decoder, including paths with non-ASCII characters.
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+# Use physical coordinates consistently when Explorer crosses scaled monitors.
+try { [WinAPI]::SetThreadDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 
 # Store previous full explorer state
 # Used to avoid duplicate JSON output
@@ -199,6 +207,13 @@ while ($true) {
                 $outerWidth = $outerRect.Right - $outerRect.Left
                 $outerHeight = $outerRect.Bottom - $outerRect.Top
 
+                $dpi = 96
+                try {
+                    $windowDpi = [WinAPI]::GetDpiForWindow([IntPtr]$targetWindow.HWND)
+                    if ($windowDpi -gt 0) { $dpi = $windowDpi }
+                } catch {}
+                $sidebarWidth = [int][Math]::Round(320 * $dpi / 96)
+
                 # Original bounds also track docking independently for each window.
                 if (-not $originalExplorerBounds.ContainsKey($targetWindow.HWND)) {
 
@@ -225,6 +240,7 @@ while ($true) {
                                 y = $outerRect.Top
                                 width = $outerWidth
                                 height = $outerHeight
+                                reservedWidth = $sidebarWidth
                             }
                         }
 
@@ -235,6 +251,20 @@ while ($true) {
                         } else {
                             [WinAPI]::GetWindowRect([IntPtr]$targetWindow.HWND, [ref]$rect) | Out-Null
                         }
+                    }
+                }
+                elseif ($originalExplorerBounds[$targetWindow.HWND].reservedWidth -ne $sidebarWidth) {
+                    # Adjust only the change in reserved space after a DPI change.
+                    $bounds = $originalExplorerBounds[$targetWindow.HWND]
+                    $newWidth = $outerWidth + $bounds.reservedWidth - $sidebarWidth
+                    if ($newWidth -gt 500 -and [WinAPI]::MoveWindow(
+                        [IntPtr]$targetWindow.HWND, $outerRect.Left, $outerRect.Top,
+                        $newWidth, $outerHeight, $true
+                    )) {
+                        $bounds.reservedWidth = $sidebarWidth
+                        $res = [WinAPI]::DwmGetWindowAttribute([IntPtr]$targetWindow.HWND, 9, [ref]$dwmRect, 16)
+                        if ($res -eq 0) { $rect = $dwmRect }
+                        else { [WinAPI]::GetWindowRect([IntPtr]$targetWindow.HWND, [ref]$rect) | Out-Null }
                     }
                 }
 

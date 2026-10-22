@@ -31,10 +31,36 @@ function createFileSession() {
   let version = 0;
   const sizeCache = new Map();
   const matchCache = new Map();
-  async function checked(value) {
+  function operation(control = {}) {
+    const generation = version;
+    let lastReport = 0;
+    const state = { scanned: 0, skipped: 0, currentPath: "" };
+    return {
+      check() {
+        if (control.signal?.aborted || generation !== version) {
+          const error = new Error("Scan cancelled");
+          error.code = "ABORT_ERR";
+          throw error;
+        }
+      },
+      report(currentPath, skipped = false, done = false) {
+        this.check();
+        if (currentPath) { state.currentPath = currentPath; state.scanned++; }
+        if (skipped) state.skipped++;
+        if (done || Date.now() - lastReport >= 100) {
+          control.onProgress?.({ ...state, done });
+          lastReport = Date.now();
+        }
+      },
+      get skipped() { return state.skipped; }
+    };
+  }
+  async function checked(value, op) {
+    op?.check();
     const currentRoot = root;
     if (!currentRoot) throw new Error("Select a folder first");
     const resolved = await fs.realpath(validatePath(value));
+    op?.check();
     const relative = path.relative(currentRoot, resolved);
     if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error("Path is outside the active folder");
@@ -47,49 +73,56 @@ function createFileSession() {
       extension: path.extname(value).toLowerCase(), isDirectory: stat.isDirectory(),
       size: stat.size, mtimeMs: stat.mtimeMs };
   }
-  async function walk(value, filter, visited, sizes) {
+  async function walk(value, filter, visited, sizes, op) {
     try {
-      const resolved = await checked(value);
+      const resolved = await checked(value, op);
       if (visited.has(resolved)) return sizes ? 0 : false;
       visited.add(resolved);
       let total = 0;
       for (const name of await fs.readdir(resolved)) {
         try {
-          const child = await checked(path.join(resolved, name));
+          const child = await checked(path.join(resolved, name), op);
           const stat = await fs.stat(child);
+          op.report(child);
           if (!stat.isDirectory() && !stat.isFile()) continue;
-          if (sizes) total += stat.isDirectory() ? await walk(child, filter, visited, true) : stat.size;
-          else if (stat.isDirectory() ? await walk(child, filter, visited, false) : matches(name, filter)) return true;
-        } catch { /* Skip inaccessible or out-of-root entries. */ }
+          if (sizes) total += stat.isDirectory() ? await walk(child, filter, visited, true, op) : stat.size;
+          else if (stat.isDirectory() ? await walk(child, filter, visited, false, op) : matches(name, filter)) return true;
+        } catch { op.check(); op.report(null, true); }
       }
       return sizes ? total : false;
-    } catch { return sizes ? 0 : false; }
+    } catch { op.check(); op.report(null, true); return sizes ? 0 : false; }
   }
   return {
-    async openRoot(value, showSize = false) {
+    async openRoot(value, showSize = false, control) {
       if (typeof showSize !== "boolean") throw new Error("Invalid size option");
       const request = ++version;
+      const op = operation(control);
       const resolved = await fs.realpath(validatePath(value));
       const stat = await fs.stat(resolved);
+      op.check();
       if (!stat.isDirectory()) throw new Error("Please select a folder");
       if (request !== version) throw new Error("Folder changed; try again");
       root = resolved;
       sizeCache.clear();
       matchCache.clear();
       const result = entry(resolved, stat);
-      if (showSize) result.size = await walk(resolved, "all", new Set(), true);
+      if (showSize) result.size = await walk(resolved, "all", new Set(), true, op);
+      result.partial = op.skipped > 0;
+      op.report(null, false, true);
       return result;
     },
-    async readDirectory(value, options) {
+    async readDirectory(value, options, control) {
+      const op = operation(control);
       if (!options || !["all", ...Object.keys(TYPES)].includes(options.filter) ||
           !SORTS.has(options.sort) || typeof options.showSize !== "boolean") throw new Error("Invalid directory options");
-      const resolved = await checked(value);
+      const resolved = await checked(value, op);
       const items = [];
       const needSize = options.showSize || options.sort.startsWith("size-");
       for (const name of await fs.readdir(resolved)) {
         try {
-          const child = await checked(path.join(resolved, name));
+          const child = await checked(path.join(resolved, name), op);
           const stat = await fs.stat(child);
+          op.report(child);
           if (!stat.isDirectory() && !stat.isFile()) continue;
           if (stat.isDirectory()) {
             // Directory aliases can create recursive UI expansion even when scans
@@ -97,17 +130,29 @@ function createFileSession() {
             if ((await fs.lstat(path.join(resolved, name))).isSymbolicLink()) continue;
             if (options.filter !== "all") {
               const key = JSON.stringify([child, options.filter]);
-              if (!matchCache.has(key)) matchCache.set(key, await walk(child, options.filter, new Set(), false));
-              if (!matchCache.get(key)) continue;
+              if (!matchCache.has(key)) {
+                const matched = await walk(child, options.filter, new Set(), false, op);
+                op.check();
+                // An incomplete scan must be retried instead of cached as no match.
+                if (!op.skipped) matchCache.set(key, matched);
+                if (!matched) continue;
+              }
+              if (matchCache.has(key) && !matchCache.get(key)) continue;
             }
           } else if (!matches(name, options.filter)) continue;
           const item = entry(path.join(resolved, name), stat);
           if (item.isDirectory && needSize) {
-            if (!sizeCache.has(child)) sizeCache.set(child, await walk(child, "all", new Set(), true));
-            item.size = sizeCache.get(child);
+            if (!sizeCache.has(child)) {
+              const skippedBefore = op.skipped;
+              const size = await walk(child, "all", new Set(), true, op);
+              op.check();
+              item.size = size;
+              item.partial = op.skipped > skippedBefore;
+              if (!item.partial) sizeCache.set(child, size);
+            } else item.size = sizeCache.get(child);
           }
           items.push(item);
-        } catch { /* A bad entry must not hide its siblings. */ }
+        } catch { op.check(); op.report(null, true); }
       }
       items.sort((a, b) => {
         if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
@@ -117,6 +162,7 @@ function createFileSession() {
           a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
         return direction * result;
       });
+      op.report(null, false, true);
       return items;
     },
     async preview(value) {

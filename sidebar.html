@@ -32,7 +32,7 @@
     <header class="sidebar-top-controls">
 
       <!-- File Type Filter -->
-      <select id="filter-select">
+      <select id="filter-select" aria-label="File type filter">
 
         <option value="all">
           📁 All Files
@@ -69,7 +69,7 @@
       </select>
 
       <!-- Sorting -->
-      <select id="sort-select">
+      <select id="sort-select" aria-label="Sort order">
 
         <option value="name-asc">
           A-Z
@@ -109,13 +109,20 @@
       <div id="path">
         Waiting for Explorer...
       </div>
+      <button id="refresh-btn" class="secondary-btn" title="Refresh (F5 or Ctrl+R)">Refresh</button>
 
+    </div>
+
+    <div id="scan-status" class="scan-status" hidden>
+      <progress id="scan-progress" aria-label="Scanning folders"></progress>
+      <span id="scan-message" role="status" aria-live="polite"></span>
+      <button id="cancel-scan-btn" class="secondary-btn" title="Cancel scan (Escape)">Cancel</button>
     </div>
 
     <!-- SAME TREE UI -->
     <main class="tree-panel">
 
-      <div id="tree-container">
+      <div id="tree-container" role="tree" aria-label="Explorer folder contents">
 
         <div class="empty-tree-state">
 

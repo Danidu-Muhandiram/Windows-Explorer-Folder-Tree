@@ -10,8 +10,10 @@ function subscribe(channel, callback) {
 // Fixed methods and channels only. Never expose ipcRenderer or IPC event objects.
 contextBridge.exposeInMainWorld("folderTree", {
   selectFolder: () => ipcRenderer.invoke("select-folder"),
-  openRoot: (value, showSize = false) => ipcRenderer.invoke("browse-root", value, showSize),
-  readDirectory: (value, options) => ipcRenderer.invoke("read-directory", value, options),
+  openRoot: (value, showSize = false, requestId = null) => ipcRenderer.invoke("browse-root", value, showSize, requestId),
+  readDirectory: (value, options, requestId = null) => ipcRenderer.invoke("read-directory", value, options, requestId),
+  cancelScan: (requestId = null) => ipcRenderer.invoke("cancel-scan", requestId),
+  onScanProgress: callback => subscribe("scan-progress", callback),
   preview: value => ipcRenderer.invoke("preview-file", value),
   openFile: value => ipcRenderer.invoke("open-file", value),
   setSidebar: enabled => ipcRenderer.send("toggle-smart-sidebar", enabled),

@@ -5,7 +5,8 @@ const {
   ipcMain,
   dialog,
   Menu,
-  shell
+  shell,
+  screen
 } = require("electron");
 // import path module (used for file paths)
 const path = require("path");
@@ -13,7 +14,8 @@ const path = require("path");
 const { spawn } = require("child_process");
 const readline = require("readline");
 const { pathToFileURL } = require("url");
-const { createFileSession } = require("./file-service");
+const { createWorkerSession } = require("./worker-client");
+const { sidebarBounds } = require("./docking");
 const fileSessions = new WeakMap();
 const trustedPages = new WeakMap();
 
@@ -30,7 +32,11 @@ function secureWindow(window, file) {
   const contents = window.webContents;
   const url = pathToFileURL(path.join(__dirname, file)).href;
   trustedPages.set(contents, url);
-  fileSessions.set(contents, createFileSession());
+  const files = createWorkerSession(progress => {
+    if (!contents.isDestroyed()) contents.send("scan-progress", progress);
+  });
+  fileSessions.set(contents, files);
+  contents.once("destroyed", () => { files.dispose(); });
   contents.setWindowOpenHandler(() => ({ action: "deny" }));
   contents.on("will-navigate", (event, target) => { if (target !== url) event.preventDefault(); });
   contents.on("will-redirect", (event, target) => { if (target !== url) event.preventDefault(); });
@@ -57,6 +63,13 @@ let watcherStopPromise = null;
 let readyToQuit = false;
 let quitRequested = false;
 let smartSidebarEnabled = false;
+let lastExplorerState = null;
+
+function positionSidebar() {
+  if (lastExplorerState && !lastExplorerState.minimized && sidebarWindow && !sidebarWindow.isDestroyed()) {
+    sidebarWindow.setBounds(sidebarBounds(screen, lastExplorerState, SIDEBAR_WIDTH));
+  }
+}
 
 // Helper to dynamically update sidebar's alwaysOnTop behavior
 function updateSidebarAlwaysOnTop(isExplorerActive) {
@@ -98,6 +111,7 @@ function stopExplorerWatcher() {
       lastExplorerPath = null;
       lastExplorerHandle = null;
       lastExplorerActive = false;
+      lastExplorerState = null;
     }
     watcherStopPromise = null;
   });
@@ -124,7 +138,7 @@ function createWindow() {
 
   // load index.html into the window
   secureWindow(win, "index.html");
-  win.loadFile("index.html");
+  win.loadFile(path.join(__dirname, "index.html"));
 
   // Remove default Electron menu
   Menu.setApplicationMenu(null);
@@ -147,7 +161,7 @@ function createWindow() {
   });
 
   secureWindow(sidebarWindow, "sidebar.html");
-  sidebarWindow.loadFile("sidebar.html");
+  sidebarWindow.loadFile(path.join(__dirname, "sidebar.html"));
 
   // The hidden sidebar must not keep the application alive after its main window closes.
   win.on("closed", () => {
@@ -170,6 +184,7 @@ function createWindow() {
   sidebarWindow.on("blur", () => {
     updateSidebarAlwaysOnTop(lastExplorerActive);
   });
+  for (const event of ["display-added", "display-removed", "display-metrics-changed"]) screen.on(event, positionSidebar);
 }
 
 // Function to start monitoring Windows File Explorer
@@ -218,6 +233,7 @@ function startExplorerWatcher() {
         lastExplorerHandle = null;
         lastExplorerPath = null;
         lastExplorerActive = false;
+        lastExplorerState = null;
         return;
       }
 
@@ -244,19 +260,14 @@ function startExplorerWatcher() {
           sidebarWindow.webContents.send("explorer-path-update", path);
         }
 
-        // Position sidebar
-        sidebarWindow.setBounds({
-          x: x + width,
-          y: y,
-          width: SIDEBAR_WIDTH,
-          height: height
-        });
+        lastExplorerState = { x, y, width, height, minimized };
 
         // Hide sidebar if Explorer minimized
         if (minimized) {
           sidebarWindow.hide();
           return;
         }
+        positionSidebar();
 
         // Show sidebar when Explorer restored
         if (!sidebarWindow.isVisible()) {
@@ -284,6 +295,7 @@ function startExplorerWatcher() {
       lastExplorerPath = null;
       lastExplorerHandle = null;
       lastExplorerActive = false;
+      lastExplorerState = null;
       if (sidebarWindow && !sidebarWindow.isDestroyed()) sidebarWindow.hide();
     }
   });
@@ -333,7 +345,7 @@ ipcMain.on(
 
     // Hide sidebar immediately
     if (sidebarWindow) {
-
+      fileSessions.get(sidebarWindow.webContents)?.cancel();
       sidebarWindow.hide();
     }
   }
@@ -346,13 +358,17 @@ ipcMain.on("theme-changed", (event, theme) => {
   }
 });
 
-ipcMain.handle("browse-root", (event, value, showSize = false) => {
+ipcMain.handle("browse-root", (event, value, showSize = false, requestId = null) => {
   requireTrustedSender(event);
-  return fileSessions.get(event.sender).openRoot(value, showSize);
+  return fileSessions.get(event.sender).openRoot(value, showSize, requestId);
 });
-ipcMain.handle("read-directory", (event, value, options) => {
+ipcMain.handle("read-directory", (event, value, options, requestId = null) => {
   requireTrustedSender(event);
-  return fileSessions.get(event.sender).readDirectory(value, options);
+  return fileSessions.get(event.sender).readDirectory(value, options, requestId);
+});
+ipcMain.handle("cancel-scan", (event, requestId = null) => {
+  requireTrustedSender(event);
+  fileSessions.get(event.sender).cancel(requestId);
 });
 ipcMain.handle("preview-file", (event, value) => {
   requireTrustedSender(event);
@@ -366,7 +382,7 @@ ipcMain.handle("open-file", async (event, value) => {
     if (error) throw new Error(error);
     return true;
   } catch (error) {
-    dialog.showErrorBox("Could not open file", error.message);
+    if (!event.sender.isDestroyed()) dialog.showErrorBox("Could not open file", error.message);
     return false;
   }
 });

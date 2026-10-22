@@ -53,6 +53,20 @@ foreach ($handle in @(1, 2)) {
     if ($originalExplorerBounds[$handle].width -ne 1400) { throw 'Original bounds overwritten' }
 }
 
+# Crossing from 100% to 150% reserves only the extra 160 physical pixels.
+$targetWindow = [pscustomobject]@{ HWND = 1 }
+$outerWidth = [WinAPI]::Widths[1]
+$sidebarWidth = 480
+. $dock
+if ([WinAPI]::Widths[1] -ne 920) { throw 'DPI change reserved incorrect space' }
+$outerWidth = [WinAPI]::Widths[1]
+. $dock
+if ([WinAPI]::Widths[1] -ne 920) { throw 'Repeated DPI update shrank window again' }
+$sidebarWidth = 320
+. $dock
+if ([WinAPI]::Widths[1] -ne 1080) { throw 'Returning to original DPI failed' }
+if ($originalExplorerBounds[1].width -ne 1400) { throw 'DPI update overwrote original bounds' }
+
 # Narrow windows and failed native calls must not be marked as successfully docked.
 $targetWindow = [pscustomobject]@{ HWND = 3 }
 [WinAPI]::Widths[3] = 800

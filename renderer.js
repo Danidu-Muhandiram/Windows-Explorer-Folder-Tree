@@ -8,6 +8,74 @@ let pinnedFolders = [];
 let treeVersion = 0;
 let previewVersion = 0;
 const expandedPaths = new Set();
+const activeScans = new Map();
+let nextScanId = 0;
+let lastRequestedRoot = null;
+
+function scanCancelled(error) { return /Scan cancelled|Folder changed/.test(error.message || ""); }
+function updateScanStatus(message = "") {
+  const bar = $("scan-status");
+  if (!bar) return;
+  const jobs = [...activeScans.values()].filter(job => !job.cancelled);
+  bar.hidden = !jobs.length && !message;
+  $("scan-progress").hidden = !jobs.length;
+  $("cancel-scan-btn").hidden = !jobs.length;
+  const checked = jobs.reduce((sum, job) => sum + (job.scanned || 0), 0);
+  $("scan-message").textContent = jobs.length ? `Checking ${checked.toLocaleString()} entries…` : message;
+  $("scan-message").title = jobs.at(-1)?.currentPath || "";
+  treeContainer.setAttribute("aria-busy", String(jobs.length > 0));
+}
+async function withScan(method, args, consume = value => value) {
+  const id = ++nextScanId;
+  const job = { cancelled: false, skipped: 0, path: args[0], version: treeVersion };
+  activeScans.set(id, job);
+  updateScanStatus();
+  let message = "";
+  try {
+    const result = await api[method](...args, id);
+    if (job.cancelled) throw new Error("Scan cancelled");
+    return await consume(result, job);
+  } catch (error) {
+    if (scanCancelled(error)) message = "Scan cancelled. Refresh or expand the folder to try again.";
+    throw error;
+  } finally {
+    activeScans.delete(id);
+    if (!message && job.skipped) message = `Skipped ${job.skipped} inaccessible entries. Some results or sizes may be incomplete.`;
+    updateScanStatus(job.version === treeVersion ? message : "");
+  }
+}
+function cancelScans(folderPath = null) {
+  if (!activeScans.size) return;
+  for (const [id, job] of activeScans) {
+    if (folderPath && job.path !== folderPath && !job.path.startsWith(folderPath + "\\") && !job.path.startsWith(folderPath + "/")) continue;
+    job.cancelled = true;
+    api.cancelScan?.(id).catch(error => showError(treeContainer, error));
+  }
+  updateScanStatus("Scan cancelled. Refresh or expand the folder to try again.");
+}
+api.onScanProgress?.(progress => {
+  const job = activeScans.get(progress.requestId);
+  if (!job || job.cancelled) return;
+  Object.assign(job, progress);
+  updateScanStatus();
+});
+
+function visibleTreeItems() {
+  return [...treeContainer.querySelectorAll('[role="treeitem"]')].filter(item => item.getClientRects().length > 0);
+}
+function focusTreeItem(item) {
+  if (!item) return;
+  for (const row of treeContainer.querySelectorAll('[role="treeitem"]')) row.tabIndex = row === item ? 0 : -1;
+  item.focus();
+}
+function restoreTreeFocus(path, hadFocus) {
+  const rows = visibleTreeItems();
+  const row = rows.find(item => item.dataset.path === path) || rows[0];
+  if (row) {
+    row.tabIndex = 0;
+    if (hadFocus) focusTreeItem(row);
+  }
+}
 
 function node(tag, className = "", text) {
   const result = document.createElement(tag);
@@ -30,8 +98,21 @@ function formatDate(value) {
 function options() {
   return { filter: $("filter-select")?.value || "all", sort: $("sort-select")?.value || "name-asc", showSize: !!$("toggle-size")?.checked };
 }
-function showError(container, error) {
-  if (container) container.replaceChildren(node("p", "error-message", error.message || String(error)));
+function showError(container, error, retry) {
+  if (!container) return;
+  const wrapper = node("div", "error-state");
+  const message = scanCancelled(error) ? "Scan cancelled." :
+    /ENOENT/.test(error.message) ? "This file or folder no longer exists. Refresh to update the tree." :
+    /EACCES|EPERM/.test(error.message) ? "Access denied. Choose another folder or check its permissions." : error.message || String(error);
+  const paragraph = node("p", "error-message", message);
+  paragraph.setAttribute("role", scanCancelled(error) ? "status" : "alert");
+  wrapper.append(paragraph);
+  if (retry) {
+    const button = node("button", "secondary-btn", "Try again");
+    button.addEventListener("click", retry);
+    wrapper.append(button);
+  }
+  container.replaceChildren(wrapper);
 }
 function resetPreviewPanel() {
   previewVersion++;
@@ -45,6 +126,8 @@ function resetPreviewPanel() {
   }
 }
 async function openRootFolder(folderPath) {
+  cancelScans();
+  lastRequestedRoot = folderPath;
   const version = ++treeVersion;
   currentRootPath = null;
   selectedFilePath = null;
@@ -53,28 +136,43 @@ async function openRootFolder(folderPath) {
   updatePinButtonState();
   treeContainer.replaceChildren(node("p", "status-message", "Loading folder..."));
   try {
-    const entry = await api.openRoot(folderPath, options().showSize);
+    const entry = await withScan("openRoot", [folderPath, options().showSize]);
     if (version !== treeVersion) return;
     currentRootPath = entry.path;
     $("path").textContent = entry.path;
     updatePinButtonState();
     const root = await buildTreeNode(entry, version);
-    if (version === treeVersion) treeContainer.replaceChildren(root);
+    if (version === treeVersion) {
+      treeContainer.replaceChildren(root);
+      restoreTreeFocus(null, false);
+    }
   } catch (error) {
-    if (version === treeVersion) showError(treeContainer, error);
+    if (version === treeVersion) showError(treeContainer, error, () => openRootFolder(folderPath));
   }
 }
 async function renderTree() {
-  if (!currentRootPath) return;
+  if (!currentRootPath) {
+    if (lastRequestedRoot) return openRootFolder(lastRequestedRoot);
+    return;
+  }
+  const hadFocus = treeContainer.contains(document.activeElement);
+  const focusedPath = document.activeElement?.dataset?.path;
+  cancelScans();
   const version = ++treeVersion;
   const rootPath = currentRootPath;
+  selectedFilePath = null;
+  resetPreviewPanel();
   treeContainer.replaceChildren(node("p", "status-message", "Loading folder..."));
   try {
-    const entry = await api.openRoot(rootPath, options().showSize);
+    const entry = await withScan("openRoot", [rootPath, options().showSize]);
+    if (version !== treeVersion) return;
     const root = await buildTreeNode(entry, version);
-    if (version === treeVersion) treeContainer.replaceChildren(root);
+    if (version === treeVersion) {
+      treeContainer.replaceChildren(root);
+      restoreTreeFocus(focusedPath, hadFocus);
+    }
   } catch (error) {
-    if (version === treeVersion) showError(treeContainer, error);
+    if (version === treeVersion) showError(treeContainer, error, renderTree);
   }
 }
 function iconFor(entry) {
@@ -91,19 +189,29 @@ function iconFor(entry) {
 }
 async function buildTreeNode(entry, version) {
   const item = node("div", entry.isDirectory ? "tree-item folder" : "tree-item");
+  item.setAttribute("role", "treeitem");
+  item.setAttribute("aria-label", entry.name);
+  item.dataset.path = entry.path;
+  item.tabIndex = -1;
+  item.addEventListener("focus", event => {
+    if (event.target !== item) return;
+    for (const row of treeContainer.querySelectorAll('[role="treeitem"]')) row.tabIndex = row === item ? 0 : -1;
+  });
   const header = node("div", "tree-item-header");
   const arrow = node("span", "arrow", "▶");
   const icon = node("span", "node-icon", iconFor(entry));
   if (entry.isDirectory) header.append(arrow); else icon.classList.add("file-icon");
   header.append(icon, node("span", "node-name", entry.name));
   const metadata = [];
-  if (options().showSize) metadata.push(formatBytes(entry.size));
+  if (options().showSize) metadata.push(`${entry.partial ? "At least " : ""}${formatBytes(entry.size)}`);
   if ($("toggle-date")?.checked) metadata.push(formatDate(entry.mtimeMs));
   if (metadata.length) header.append(node("span", "item-meta", `(${metadata.join(" | ")})`));
   item.append(header);
   if (entry.path === selectedFilePath) item.classList.add("active-file");
   if (entry.isDirectory) {
     const children = node("div", "children");
+    children.setAttribute("role", "group");
+    item.setAttribute("aria-expanded", "false");
     item.append(children);
     let loaded = false;
     let loading = false;
@@ -112,38 +220,76 @@ async function buildTreeNode(entry, version) {
       loading = true;
       children.replaceChildren(node("p", "status-message", "Loading..."));
       try {
-        const entries = await api.readDirectory(entry.path, options());
-        const nodes = [];
-        for (const child of entries) nodes.push(await buildTreeNode(child, version));
-        if (version !== treeVersion) return;
-        children.replaceChildren(...nodes);
-        if (!nodes.length) children.append(node("p", "status-message", "No matching files."));
-        loaded = true;
-      } catch (error) { if (version === treeVersion) showError(children, error); }
+        await withScan("readDirectory", [entry.path, options()], async (entries, job) => {
+          children.replaceChildren();
+          for (let index = 0; index < entries.length; index++) {
+            if (job.cancelled || version !== treeVersion) throw new Error("Scan cancelled");
+            children.append(await buildTreeNode(entries[index], version));
+            // Let input and painting run while building large directory listings.
+            if (index % 100 === 99) await new Promise(resolve => setTimeout(resolve, 0));
+          }
+          if (!entries.length) children.append(node("p", "status-message", options().filter === "all" ? "This folder is empty." : "No files match the selected filter."));
+          loaded = true;
+        });
+      } catch (error) { if (version === treeVersion) showError(children, error, load); }
       finally { loading = false; }
     };
     const expand = expanded => {
       item.classList.toggle("expanded", expanded);
+      item.setAttribute("aria-expanded", String(expanded));
       icon.textContent = expanded ? "📂" : "📁";
     };
     header.addEventListener("click", async event => {
       event.stopPropagation();
+      focusTreeItem(item);
       if (version !== treeVersion) return;
       const expanded = !expandedPaths.has(entry.path);
       if (expanded) expandedPaths.add(entry.path); else expandedPaths.delete(entry.path);
       expand(expanded);
+      if (!expanded) cancelScans(entry.path);
       if (expanded) await load();
     });
     if (expandedPaths.has(entry.path)) { expand(true); await load(); }
+    item.treeAction = async expanded => {
+      if (expanded) expandedPaths.add(entry.path); else expandedPaths.delete(entry.path);
+      expand(expanded);
+      if (!expanded) cancelScans(entry.path);
+      if (expanded) await load();
+    };
   } else {
-    header.addEventListener("click", () => {
+    const selectFile = () => {
       document.querySelectorAll(".tree-item.active-file").forEach(row => row.classList.remove("active-file"));
+      document.querySelectorAll('[role="treeitem"]').forEach(row => row.setAttribute("aria-selected", "false"));
       item.classList.add("active-file");
+      item.setAttribute("aria-selected", "true");
       selectedFilePath = entry.path;
       if (previewBody) showFilePreview(entry.path);
       if (document.body.classList.contains("sidebar-mode")) openFile(entry.path);
-    });
+    };
+    header.addEventListener("click", () => { focusTreeItem(item); selectFile(); });
+    item.treeAction = selectFile;
   }
+  item.addEventListener("keydown", async event => {
+    if (event.target !== item) return;
+    const keys = ["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End", "Enter", " "];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation();
+    const rows = visibleTreeItems();
+    const index = rows.indexOf(item);
+    if (event.key === "ArrowDown") focusTreeItem(rows[Math.min(rows.length - 1, index + 1)]);
+    else if (event.key === "ArrowUp") focusTreeItem(rows[Math.max(0, index - 1)]);
+    else if (event.key === "Home") focusTreeItem(rows[0]);
+    else if (event.key === "End") focusTreeItem(rows.at(-1));
+    else if (event.key === "ArrowRight" && entry.isDirectory) {
+      if (!expandedPaths.has(entry.path)) await item.treeAction(true);
+      else focusTreeItem(item.querySelector('[role="group"] > [role="treeitem"]'));
+    } else if (event.key === "ArrowLeft") {
+      if (entry.isDirectory && expandedPaths.has(entry.path)) await item.treeAction(false);
+      else focusTreeItem(item.parentElement?.closest('[role="treeitem"]'));
+    } else if (event.key === "Enter" || event.key === " ") {
+      await item.treeAction(entry.isDirectory ? !expandedPaths.has(entry.path) : undefined);
+    }
+  });
   return item;
 }
 async function openFile(filePath) {
@@ -217,7 +363,8 @@ function renderPinnedList() {
   for (const folderPath of pinnedFolders) {
     const item = node("div", "pinned-item");
     item.title = folderPath;
-    const info = node("div", "pinned-item-info");
+    const info = node("button", "pinned-item-info favorite-open");
+    info.title = folderPath;
     info.append(node("span", "", "📁"), node("span", "pinned-item-name", basename(folderPath)));
     const unpin = node("button", "unpin-btn", "×");
     unpin.title = "Unpin folder";
@@ -227,7 +374,7 @@ function renderPinnedList() {
       localStorage.setItem("pinnedFolders", JSON.stringify(pinnedFolders));
       renderPinnedList(); updatePinButtonState();
     });
-    item.addEventListener("click", () => openRootFolder(folderPath));
+    info.addEventListener("click", () => openRootFolder(folderPath));
     item.append(info, unpin);
     list.append(item);
   }
@@ -271,5 +418,14 @@ $("pin-btn")?.addEventListener("click", () => {
 for (const id of ["filter-select", "sort-select", "toggle-date", "toggle-size"]) $(id)?.addEventListener("change", renderTree);
 $("open-file-btn")?.addEventListener("click", () => { if (selectedFilePath) openFile(selectedFilePath); });
 $("smartSidebarToggle")?.addEventListener("change", event => api.setSidebar(event.target.checked));
+$("refresh-btn")?.addEventListener("click", renderTree);
+$("cancel-scan-btn")?.addEventListener("click", () => cancelScans());
+document.addEventListener("keydown", event => {
+  if (event.key === "F5" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r")) {
+    event.preventDefault(); renderTree();
+  } else if (event.key === "Escape" && activeScans.size) {
+    event.preventDefault(); cancelScans();
+  }
+});
 initSettings();
 window.openRootFolder = openRootFolder;
