@@ -305,6 +305,14 @@ ipcMain.on("theme-changed", (event, theme) => {
   }
 });
 
+ipcMain.on("file-open-failed", (event, filePath, message) => {
+  const senderIsAppWindow = [win, sidebarWindow].some(window =>
+    window && !window.isDestroyed() && window.webContents === event.sender
+  );
+  if (!senderIsAppWindow || typeof filePath !== "string" || typeof message !== "string") return;
+  dialog.showErrorBox("Could not open file", `${filePath}\n\n${message}`);
+});
+
 
 
 // When Electron app is ready

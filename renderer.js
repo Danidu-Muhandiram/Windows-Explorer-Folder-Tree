@@ -1,6 +1,7 @@
 const { ipcRenderer, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("url");
 
 // State Management
 let currentRootPath = null;
@@ -46,9 +47,16 @@ function initSettings() {
 
   // 2. Load Pinned Folders
   const savedPins = localStorage.getItem("pinnedFolders");
+  pinnedFolders = [];
   if (savedPins) {
     try {
-      pinnedFolders = JSON.parse(savedPins);
+      const parsedPins = JSON.parse(savedPins);
+      if (Array.isArray(parsedPins)) {
+        pinnedFolders = [...new Set(parsedPins.filter(folderPath =>
+          typeof folderPath === "string" && folderPath.trim().length > 0 &&
+          !folderPath.includes("\0") && path.isAbsolute(folderPath)
+        ))];
+      }
     } catch (e) {
       pinnedFolders = [];
     }
@@ -123,7 +131,12 @@ function dirHasMatch(dirPath, filterValue) {
     const items = fs.readdirSync(dirPath);
     for (const item of items) {
       const fullPath = path.join(dirPath, item);
-      const stat = fs.statSync(fullPath);
+      let stat;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch (error) {
+        continue; // One inaccessible entry must not hide later matches.
+      }
       if (stat.isDirectory()) {
         if (dirHasMatch(fullPath, filterValue)) {
           hasMatch = true;
@@ -152,7 +165,12 @@ function getFolderSize(dirPath) {
     const items = fs.readdirSync(dirPath);
     for (const item of items) {
       const fullPath = path.join(dirPath, item);
-      const stat = fs.statSync(fullPath);
+      let stat;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch (error) {
+        continue; // Keep counting accessible entries.
+      }
       if (stat.isDirectory()) {
         totalSize += getFolderSize(fullPath);
       } else {
@@ -381,7 +399,7 @@ function buildTreeNode(itemPath) {
 
       // Open the file in the default program immediately on single-click (sidebar mode only)
       if (document.body.classList.contains("sidebar-mode")) {
-        shell.openPath(itemPath);
+        openFile(itemPath);
       }
     });
   }
@@ -396,6 +414,7 @@ function loadChildren(dirPath, container) {
     const filterVal = filterSelect ? filterSelect.value : "all";
     const sortVal = sortSelect ? sortSelect.value : "name-asc";
     const showSize = toggleSize ? toggleSize.checked : false;
+    const needsFolderSize = showSize || sortVal === "size-asc" || sortVal === "size-desc";
 
     const items = [];
     for (const name of rawNames) {
@@ -419,7 +438,7 @@ function loadChildren(dirPath, container) {
         name,
         fullPath,
         isDirectory: isDir,
-        size: isDir ? (showSize ? getFolderSize(fullPath) : 0) : stat.size,
+        size: isDir ? (needsFolderSize ? getFolderSize(fullPath) : 0) : stat.size,
         mtimeMs: stat.mtimeMs,
         stat
       });
@@ -436,6 +455,39 @@ function loadChildren(dirPath, container) {
   } catch (err) {
     container.innerHTML = `<p style="color:var(--danger-color); font-size:12px; padding-left:15px;">Error loading contents.</p>`;
   }
+}
+
+// Report both shell error strings and rejected requests through a native dialog.
+async function openFile(filePath) {
+  let errorMessage;
+  try {
+    errorMessage = await shell.openPath(filePath);
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : String(error);
+  }
+  if (errorMessage) {
+    ipcRenderer.send("file-open-failed", filePath, errorMessage);
+  }
+}
+
+function showMediaPreview(filePath, tagName, wrapperClass) {
+  const wrapper = document.createElement("div");
+  wrapper.className = wrapperClass;
+  const media = document.createElement(tagName);
+  media.src = pathToFileURL(filePath).href;
+  if (tagName === "img") {
+    media.alt = path.basename(filePath);
+  } else {
+    media.controls = true;
+    if (tagName === "audio") {
+      const icon = document.createElement("span");
+      icon.className = "media-icon";
+      icon.textContent = "🎵";
+      wrapper.appendChild(icon);
+    }
+  }
+  wrapper.appendChild(media);
+  previewBody.replaceChildren(wrapper);
 }
 
 // Generate File Preview Details
@@ -505,28 +557,15 @@ function showFilePreview(filePath) {
 
     // Images
     if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) {
-      previewBody.innerHTML = `
-        <div class="image-preview-wrapper">
-          <img src="file:///${filePath.replace(/\\/g, '/')}" alt="${fileName}">
-        </div>
-      `;
+      showMediaPreview(filePath, "img", "image-preview-wrapper");
     }
     // Audio players
     else if ([".mp3", ".wav", ".ogg"].includes(ext)) {
-      previewBody.innerHTML = `
-        <div class="audio-preview-wrapper">
-          <span class="media-icon">🎵</span>
-          <audio controls src="file:///${filePath.replace(/\\/g, '/')}"></audio>
-        </div>
-      `;
+      showMediaPreview(filePath, "audio", "audio-preview-wrapper");
     }
     // Video players
     else if ([".mp4", ".webm", ".mkv"].includes(ext)) {
-      previewBody.innerHTML = `
-        <div class="video-preview-wrapper">
-          <video controls src="file:///${filePath.replace(/\\/g, '/')}"></video>
-        </div>
-      `;
+      showMediaPreview(filePath, "video", "video-preview-wrapper");
     }
     // Text & Code files
     else if ([".js", ".ts", ".json", ".html", ".css", ".md", ".py", ".cpp", ".h", ".txt", ".ini", ".cfg", ".xml", ".yaml", ".yml", ".bat", ".sh"].includes(ext)) {
@@ -592,7 +631,7 @@ function showFilePreview(filePath) {
       const cardOpenBtn = document.getElementById("card-open-btn");
       if (cardOpenBtn) {
         cardOpenBtn.addEventListener("click", () => {
-          shell.openPath(filePath);
+          openFile(filePath);
         });
       }
     }
@@ -702,7 +741,7 @@ if (pinBtn) {
 if (openFileBtn) {
   openFileBtn.addEventListener("click", () => {
     if (selectedFilePath) {
-      shell.openPath(selectedFilePath);
+      openFile(selectedFilePath);
     }
   });
 }

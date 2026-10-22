@@ -14,6 +14,7 @@ function createApp() {
   const handlers = {};
   const timers = new Map();
   const errors = [];
+  const dialogs = [];
   const app = new EventEmitter();
   app.whenReady = () => ({ then: (fn) => fn() });
   app.exited = false;
@@ -52,7 +53,7 @@ function createApp() {
       if (name === "electron") return {
         app, BrowserWindow: Window,
         ipcMain: { handle() {}, on: (name, fn) => { handlers[name] = fn; } },
-        dialog: {}, Menu: { setApplicationMenu() {} }
+        dialog: { showErrorBox: (...args) => dialogs.push(args) }, Menu: { setApplicationMenu() {} }
       };
       if (name === "child_process") return { spawn() {
         const watcher = new EventEmitter();
@@ -73,7 +74,8 @@ function createApp() {
     clearTimeout(id) { timers.delete(id); }
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../main.js"), "utf8"), context);
-  return { app, windows, watchers, timers, errors,
+  return { app, windows, watchers, timers, errors, dialogs,
+    reportOpenFailure: (sender, filePath, message) => handlers["file-open-failed"]({ sender }, filePath, message),
     toggle: (enabled) => handlers["toggle-smart-sidebar"]({}, enabled) };
 }
 
@@ -178,4 +180,29 @@ test("stopping watcher ignores queued updates and rapid toggles honor final stat
 test("PowerShell docking tracks each Explorer window independently", { skip: process.platform !== "win32" }, () => {
   execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(__dirname, "watcher-docking.test.ps1")], { stdio: "pipe" });
+});
+
+test("unexpected watcher exit permits restart and resends the current folder", async () => {
+  const fixture = createApp();
+  await fixture.toggle(true);
+  send(fixture.watchers[0], state());
+  fixture.watchers[0].emit("close", 1);
+  assert.equal(fixture.windows[1].isVisible(), false);
+  await fixture.toggle(false);
+  await fixture.toggle(true);
+  assert.equal(fixture.watchers.length, 2);
+  send(fixture.watchers[1], state());
+  assert.equal(fixture.windows[1].isVisible(), true);
+  assert.equal(fixture.windows[1].messages.length, 2);
+});
+
+test("file-open failures appear in a native dialog only for app windows", () => {
+  const fixture = createApp();
+  for (const window of fixture.windows) {
+    fixture.reportOpenFailure(window.webContents, "C:\\missing.txt", "File not found");
+  }
+  fixture.reportOpenFailure({}, "C:\\missing.txt", "Untrusted sender");
+  fixture.reportOpenFailure(fixture.windows[0].webContents, {}, "Invalid path");
+  assert.equal(fixture.dialogs.length, 2);
+  assert.deepEqual(fixture.dialogs[0], ["Could not open file", "C:\\missing.txt\n\nFile not found"]);
 });
