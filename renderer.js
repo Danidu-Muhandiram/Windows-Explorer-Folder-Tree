@@ -1,765 +1,275 @@
-const { ipcRenderer, shell } = require("electron");
-const fs = require("fs");
-const path = require("path");
-const { pathToFileURL } = require("url");
-
-// State Management
+const api = window.folderTree;
+const $ = id => document.getElementById(id);
+const treeContainer = $("tree-container");
+const previewBody = $("preview-body");
 let currentRootPath = null;
 let selectedFilePath = null;
-const expandedPaths = new Set();
 let pinnedFolders = [];
+let treeVersion = 0;
+let previewVersion = 0;
+const expandedPaths = new Set();
 
-// Caches for performance optimization
-let folderSizeCache = new Map();
-let filterMatchCache = new Map();
-
-// Get DOM Elements
-const btnSelectFolder = document.getElementById("btn");
-const pathDisplay = document.getElementById("path");
-const treeContainer = document.getElementById("tree-container");
-const themeSelect = document.getElementById("theme-select");
-const filterSelect = document.getElementById("filter-select");
-const sortSelect = document.getElementById("sort-select");
-const toggleDate = document.getElementById("toggle-date");
-const toggleSize = document.getElementById("toggle-size");
-const pinBtn = document.getElementById("pin-btn");
-const pinnedList = document.getElementById("pinned-list");
-const previewTitle = document.getElementById("preview-title");
-const openFileBtn = document.getElementById("open-file-btn");
-const previewMeta = document.getElementById("preview-meta");
-const previewBody = document.getElementById("preview-body");
-
-// Initialize Application Settings
-function initSettings() {
-  // 1. Theme Configuration
-  const savedTheme = localStorage.getItem("theme") || "dark";
-  document.body.setAttribute("data-theme", savedTheme);
-  if (themeSelect) {
-    themeSelect.value = savedTheme;
-    themeSelect.addEventListener("change", () => {
-      const newTheme = themeSelect.value;
-      document.body.setAttribute("data-theme", newTheme);
-      localStorage.setItem("theme", newTheme);
-      ipcRenderer.send("theme-changed", newTheme);
-    });
-  }
-
-  // 2. Load Pinned Folders
-  const savedPins = localStorage.getItem("pinnedFolders");
-  pinnedFolders = [];
-  if (savedPins) {
-    try {
-      const parsedPins = JSON.parse(savedPins);
-      if (Array.isArray(parsedPins)) {
-        pinnedFolders = [...new Set(parsedPins.filter(folderPath =>
-          typeof folderPath === "string" && folderPath.trim().length > 0 &&
-          !folderPath.includes("\0") && path.isAbsolute(folderPath)
-        ))];
-      }
-    } catch (e) {
-      pinnedFolders = [];
-    }
-  }
-  renderPinnedList();
-
-  // Disable pin button initially since no folder is selected
-  updatePinButtonState();
+function node(tag, className = "", text) {
+  const result = document.createElement(tag);
+  result.className = className;
+  if (text !== undefined) result.textContent = text;
+  return result;
 }
-
-// Format Utilities
-function formatBytes(bytes) {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+function basename(value) { return value.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || value; }
+function isAbsolute(value) { return /^(?:[a-zA-Z]:[\\/]|\\\\[^\\]+\\[^\\]+|\/)/.test(value); }
+function formatBytes(value) {
+  if (!value) return "0 B";
+  const index = Math.min(4, Math.floor(Math.log(value) / Math.log(1024)));
+  return `${parseFloat((value / 1024 ** index).toFixed(1))} ${["B", "KB", "MB", "GB", "TB"][index]}`;
 }
-
-function formatDate(date) {
-  if (!date) return "";
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  const hh = String(date.getHours()).padStart(2, '0');
-  const min = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+function formatDate(value) {
+  const date = new Date(value);
+  const pad = number => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
-
-function escapeHTML(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+function options() {
+  return { filter: $("filter-select")?.value || "all", sort: $("sort-select")?.value || "name-asc", showSize: !!$("toggle-size")?.checked };
 }
-
-// Filter Options helper
-function matchesFilter(fileName, filterValue) {
-  if (filterValue === "all") return true;
-  const ext = path.extname(fileName).toLowerCase();
-  switch (filterValue) {
-    case "images":
-      return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext);
-    case "png":
-      return ext === ".png";
-    case "jpg":
-      return [".jpg", ".jpeg"].includes(ext);
-    case "pdf":
-      return ext === ".pdf";
-    case "word":
-      return [".doc", ".docx"].includes(ext);
-    case "excel":
-      return [".xls", ".xlsx", ".csv"].includes(ext);
-    case "ppt":
-      return [".ppt", ".pptx"].includes(ext);
-    default:
-      return true;
+function showError(container, error) {
+  if (container) container.replaceChildren(node("p", "error-message", error.message || String(error)));
+}
+function resetPreviewPanel() {
+  previewVersion++;
+  if ($("preview-title")) $("preview-title").textContent = "No file selected";
+  if ($("open-file-btn")) $("open-file-btn").disabled = true;
+  $("preview-meta")?.replaceChildren();
+  if (previewBody) {
+    const empty = node("div", "empty-preview-state");
+    empty.append(node("span", "empty-preview-icon", "👁️"), node("p", "", "Select a file from the tree to view its preview and details."));
+    previewBody.replaceChildren(empty);
   }
 }
-
-// Check if directory has matching files recursively (with cache)
-function dirHasMatch(dirPath, filterValue) {
-  if (filterValue === "all") return true;
-  const cacheKey = `${dirPath}:${filterValue}`;
-  if (filterMatchCache.has(cacheKey)) return filterMatchCache.get(cacheKey);
-
-  let hasMatch = false;
-  try {
-    const items = fs.readdirSync(dirPath);
-    for (const item of items) {
-      const fullPath = path.join(dirPath, item);
-      let stat;
-      try {
-        stat = fs.statSync(fullPath);
-      } catch (error) {
-        continue; // One inaccessible entry must not hide later matches.
-      }
-      if (stat.isDirectory()) {
-        if (dirHasMatch(fullPath, filterValue)) {
-          hasMatch = true;
-          break;
-        }
-      } else {
-        if (matchesFilter(item, filterValue)) {
-          hasMatch = true;
-          break;
-        }
-      }
-    }
-  } catch (e) {
-    // Fail silently on protected folders
-  }
-
-  filterMatchCache.set(cacheKey, hasMatch);
-  return hasMatch;
-}
-
-// Calculate directory size recursively (with cache)
-function getFolderSize(dirPath) {
-  if (folderSizeCache.has(dirPath)) return folderSizeCache.get(dirPath);
-  let totalSize = 0;
-  try {
-    const items = fs.readdirSync(dirPath);
-    for (const item of items) {
-      const fullPath = path.join(dirPath, item);
-      let stat;
-      try {
-        stat = fs.statSync(fullPath);
-      } catch (error) {
-        continue; // Keep counting accessible entries.
-      }
-      if (stat.isDirectory()) {
-        totalSize += getFolderSize(fullPath);
-      } else {
-        totalSize += stat.size;
-      }
-    }
-  } catch (e) {
-    // Fail silently
-  }
-  folderSizeCache.set(dirPath, totalSize);
-  return totalSize;
-}
-
-// Sort items according to criteria (directories always grouped first)
-function sortItems(itemsList, criteria) {
-  itemsList.sort((a, b) => {
-    // Group directories first
-    if (a.isDirectory && !b.isDirectory) return -1;
-    if (!a.isDirectory && b.isDirectory) return 1;
-
-    // Sort folders or files based on criteria
-    switch (criteria) {
-      case "name-asc":
-        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-      case "name-desc":
-        return b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' });
-      case "size-asc":
-        return a.size - b.size;
-      case "size-desc":
-        return b.size - a.size;
-      case "date-asc":
-        return a.mtimeMs - b.mtimeMs;
-      case "date-desc":
-        return b.mtimeMs - a.mtimeMs;
-      default:
-        return 0;
-    }
-  });
-}
-
-// Open folder functionality
-function openRootFolder(folderPath) {
-  if (!folderPath) return;
-
-  currentRootPath = folderPath;
-  if (pathDisplay) {
-    pathDisplay.textContent = folderPath;
-  }
-  
-  // Clear states, selection, and caches
+async function openRootFolder(folderPath) {
+  const version = ++treeVersion;
+  currentRootPath = null;
   selectedFilePath = null;
   expandedPaths.clear();
-  folderSizeCache.clear();
-  filterMatchCache.clear();
-  
-  // Reset preview panel
   resetPreviewPanel();
-  
-  // Update pin button visual state
   updatePinButtonState();
-
-  // Render tree
-  renderTree();
-}
-
-// Reset preview panel UI to empty state
-function resetPreviewPanel() {
-  if (previewTitle) previewTitle.textContent = "No file selected";
-  if (openFileBtn) openFileBtn.disabled = true;
-  if (previewMeta) previewMeta.innerHTML = "";
-  if (previewBody) {
-    previewBody.innerHTML = `
-      <div class="empty-preview-state">
-        <span class="empty-preview-icon">👁️</span>
-        <p>Select a file from the tree to view its preview and details.</p>
-      </div>
-    `;
-  }
-}
-
-// Render Folder Tree
-function renderTree() {
-  if (!currentRootPath) return;
-  if (!treeContainer) return;
-  treeContainer.innerHTML = "";
-  
+  treeContainer.replaceChildren(node("p", "status-message", "Loading folder..."));
   try {
-    const rootTree = buildTreeNode(currentRootPath);
-    if (rootTree) {
-      treeContainer.appendChild(rootTree);
-    } else {
-      treeContainer.innerHTML = `
-        <div class="empty-tree-state">
-          <span class="empty-icon">📂</span>
-          <p>No matching files found in this folder.</p>
-        </div>
-      `;
-    }
-  } catch (err) {
-    treeContainer.innerHTML = `<p style="color:var(--danger-color); padding: 10px;">Error loading folder structure: ${err.message}</p>`;
-  }
-}
-
-// Build Tree Node (Lazy-loaded)
-function buildTreeNode(itemPath) {
-  const name = path.basename(itemPath);
-  let stat;
-  try {
-    stat = fs.statSync(itemPath);
-  } catch (e) {
-    return null; // Skip if file/folder doesn't exist or permissions fail
-  }
-
-  const isDirectory = stat.isDirectory();
-  const filterVal = filterSelect ? filterSelect.value : "all";
-  const showDate = toggleDate ? toggleDate.checked : false;
-  const showSize = toggleSize ? toggleSize.checked : false;
-
-  // Filter checking
-  if (isDirectory) {
-    if (!dirHasMatch(itemPath, filterVal)) return null;
-  } else {
-    if (!matchesFilter(name, filterVal)) return null;
-  }
-
-  // Create node element
-  const itemDiv = document.createElement("div");
-  itemDiv.classList.add("tree-item");
-  if (isDirectory) itemDiv.classList.add("folder");
-
-  // Create header
-  const headerDiv = document.createElement("div");
-  headerDiv.classList.add("tree-item-header");
-
-  // Get matching icon
-  let icon = "📝 ";
-  if (isDirectory) {
-    icon = expandedPaths.has(itemPath) ? "📂 " : "📁 ";
-  } else {
-    const ext = path.extname(name).toLowerCase();
-    if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) icon = "🖼️ ";
-    else if (ext === ".pdf") icon = "📕 ";
-    else if ([".doc", ".docx"].includes(ext)) icon = "📘 ";
-    else if ([".xls", ".xlsx", ".csv"].includes(ext)) icon = "📗 ";
-    else if ([".ppt", ".pptx"].includes(ext)) icon = "📙 ";
-    else if ([".mp3", ".wav", ".ogg"].includes(ext)) icon = "🎵 ";
-    else if ([".mp4", ".webm", ".mkv"].includes(ext)) icon = "🎥 ";
-    else if ([".js", ".ts", ".json", ".html", ".css", ".md", ".py", ".cpp", ".txt"].includes(ext)) icon = "📄 ";
-  }
-
-  // Create items meta details
-  let metaText = "";
-  if (showSize) {
-    const sizeBytes = isDirectory ? getFolderSize(itemPath) : stat.size;
-    metaText += ` ${formatBytes(sizeBytes)}`;
-  }
-  if (showDate) {
-    const dateStr = formatDate(stat.mtime);
-    metaText += metaText ? ` | ${dateStr}` : ` ${dateStr}`;
-  }
-
-  const metaSpan = metaText ? `<span class="item-meta">(${metaText.trim()})</span>` : "";
-
-  // Set inner layout
-  if (isDirectory) {
-    headerDiv.innerHTML = `<span class="arrow">▶</span> <span class="node-icon">${icon}</span> <span class="node-name">${name}</span>${metaSpan}`;
-  } else {
-    headerDiv.innerHTML = `<span class="node-icon" style="margin-left:14px;">${icon}</span> <span class="node-name">${name}</span>${metaSpan}`;
-  }
-
-  itemDiv.appendChild(headerDiv);
-
-  // Active file highlight setup
-  if (selectedFilePath === itemPath) {
-    itemDiv.classList.add("active-file");
-  }
-
-  // If directory, handle children rendering (Lazy-loading)
-  if (isDirectory) {
-    const childrenDiv = document.createElement("div");
-    childrenDiv.classList.add("children");
-    itemDiv.appendChild(childrenDiv);
-
-    // If already expanded state, immediately load children
-    if (expandedPaths.has(itemPath)) {
-      itemDiv.classList.add("expanded");
-      const arrow = headerDiv.querySelector(".arrow");
-      if (arrow) arrow.textContent = "▼";
-      loadChildren(itemPath, childrenDiv);
-    }
-
-    // Toggle expansion on header click
-    headerDiv.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const isExpanded = itemDiv.classList.toggle("expanded");
-      const arrow = headerDiv.querySelector(".arrow");
-      const iconSpan = headerDiv.querySelector(".node-icon");
-
-      if (isExpanded) {
-        expandedPaths.add(itemPath);
-        if (arrow) arrow.textContent = "▼";
-        if (iconSpan) iconSpan.textContent = "📂 ";
-        // Load children if not loaded
-        if (childrenDiv.children.length === 0) {
-          loadChildren(itemPath, childrenDiv);
-        }
-      } else {
-        expandedPaths.delete(itemPath);
-        if (arrow) arrow.textContent = "▶";
-        if (iconSpan) iconSpan.textContent = "📁 ";
-      }
-    });
-  } else {
-    // Handle File Preview loading on click
-    headerDiv.addEventListener("click", (e) => {
-      e.stopPropagation();
-      
-      // Remove selection styles from other files
-      document.querySelectorAll(".tree-item.active-file").forEach(el => {
-        el.classList.remove("active-file");
-      });
-      itemDiv.classList.add("active-file");
-      
-      selectedFilePath = itemPath;
-      showFilePreview(itemPath);
-
-      // Open the file in the default program immediately on single-click (sidebar mode only)
-      if (document.body.classList.contains("sidebar-mode")) {
-        openFile(itemPath);
-      }
-    });
-  }
-
-  return itemDiv;
-}
-
-// Read directory files, sort them, build nodes, append to container
-function loadChildren(dirPath, container) {
-  try {
-    const rawNames = fs.readdirSync(dirPath);
-    const filterVal = filterSelect ? filterSelect.value : "all";
-    const sortVal = sortSelect ? sortSelect.value : "name-asc";
-    const showSize = toggleSize ? toggleSize.checked : false;
-    const needsFolderSize = showSize || sortVal === "size-asc" || sortVal === "size-desc";
-
-    const items = [];
-    for (const name of rawNames) {
-      const fullPath = path.join(dirPath, name);
-      let stat;
-      try {
-        stat = fs.statSync(fullPath);
-      } catch (e) {
-        continue; // skip permissions error files
-      }
-
-      const isDir = stat.isDirectory();
-      
-      if (isDir) {
-        if (!dirHasMatch(fullPath, filterVal)) continue;
-      } else {
-        if (!matchesFilter(name, filterVal)) continue;
-      }
-
-      items.push({
-        name,
-        fullPath,
-        isDirectory: isDir,
-        size: isDir ? (needsFolderSize ? getFolderSize(fullPath) : 0) : stat.size,
-        mtimeMs: stat.mtimeMs
-      });
-    }
-
-    sortItems(items, sortVal);
-
-    items.forEach(item => {
-      const node = buildTreeNode(item.fullPath);
-      if (node) {
-        container.appendChild(node);
-      }
-    });
-  } catch (err) {
-    container.innerHTML = `<p style="color:var(--danger-color); font-size:12px; padding-left:15px;">Error loading contents.</p>`;
-  }
-}
-
-// Report both shell error strings and rejected requests through a native dialog.
-async function openFile(filePath) {
-  let errorMessage;
-  try {
-    errorMessage = await shell.openPath(filePath);
+    const entry = await api.openRoot(folderPath, options().showSize);
+    if (version !== treeVersion) return;
+    currentRootPath = entry.path;
+    $("path").textContent = entry.path;
+    updatePinButtonState();
+    const root = await buildTreeNode(entry, version);
+    if (version === treeVersion) treeContainer.replaceChildren(root);
   } catch (error) {
-    errorMessage = error instanceof Error ? error.message : String(error);
-  }
-  if (errorMessage) {
-    ipcRenderer.send("file-open-failed", filePath, errorMessage);
+    if (version === treeVersion) showError(treeContainer, error);
   }
 }
-
-function showMediaPreview(filePath, tagName, wrapperClass) {
-  const wrapper = document.createElement("div");
-  wrapper.className = wrapperClass;
-  const media = document.createElement(tagName);
-  media.src = pathToFileURL(filePath).href;
-  if (tagName === "img") {
-    media.alt = path.basename(filePath);
-  } else {
-    media.controls = true;
-    if (tagName === "audio") {
-      const icon = document.createElement("span");
-      icon.className = "media-icon";
-      icon.textContent = "🎵";
-      wrapper.appendChild(icon);
-    }
+async function renderTree() {
+  if (!currentRootPath) return;
+  const version = ++treeVersion;
+  const rootPath = currentRootPath;
+  treeContainer.replaceChildren(node("p", "status-message", "Loading folder..."));
+  try {
+    const entry = await api.openRoot(rootPath, options().showSize);
+    const root = await buildTreeNode(entry, version);
+    if (version === treeVersion) treeContainer.replaceChildren(root);
+  } catch (error) {
+    if (version === treeVersion) showError(treeContainer, error);
   }
-  wrapper.appendChild(media);
+}
+function iconFor(entry) {
+  if (entry.isDirectory) return "📁";
+  const ext = entry.extension;
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) return "🖼️";
+  if (ext === ".pdf") return "📕";
+  if ([".doc", ".docx"].includes(ext)) return "📘";
+  if ([".xls", ".xlsx", ".csv"].includes(ext)) return "📗";
+  if ([".ppt", ".pptx"].includes(ext)) return "📙";
+  if ([".mp3", ".wav", ".ogg"].includes(ext)) return "🎵";
+  if ([".mp4", ".webm", ".mkv"].includes(ext)) return "🎥";
+  return "📄";
+}
+async function buildTreeNode(entry, version) {
+  const item = node("div", entry.isDirectory ? "tree-item folder" : "tree-item");
+  const header = node("div", "tree-item-header");
+  const arrow = node("span", "arrow", "▶");
+  const icon = node("span", "node-icon", iconFor(entry));
+  if (entry.isDirectory) header.append(arrow); else icon.classList.add("file-icon");
+  header.append(icon, node("span", "node-name", entry.name));
+  const metadata = [];
+  if (options().showSize) metadata.push(formatBytes(entry.size));
+  if ($("toggle-date")?.checked) metadata.push(formatDate(entry.mtimeMs));
+  if (metadata.length) header.append(node("span", "item-meta", `(${metadata.join(" | ")})`));
+  item.append(header);
+  if (entry.path === selectedFilePath) item.classList.add("active-file");
+  if (entry.isDirectory) {
+    const children = node("div", "children");
+    item.append(children);
+    let loaded = false;
+    let loading = false;
+    const load = async () => {
+      if (loaded || loading) return;
+      loading = true;
+      children.replaceChildren(node("p", "status-message", "Loading..."));
+      try {
+        const entries = await api.readDirectory(entry.path, options());
+        const nodes = [];
+        for (const child of entries) nodes.push(await buildTreeNode(child, version));
+        if (version !== treeVersion) return;
+        children.replaceChildren(...nodes);
+        if (!nodes.length) children.append(node("p", "status-message", "No matching files."));
+        loaded = true;
+      } catch (error) { if (version === treeVersion) showError(children, error); }
+      finally { loading = false; }
+    };
+    const expand = expanded => {
+      item.classList.toggle("expanded", expanded);
+      icon.textContent = expanded ? "📂" : "📁";
+    };
+    header.addEventListener("click", async event => {
+      event.stopPropagation();
+      if (version !== treeVersion) return;
+      const expanded = !expandedPaths.has(entry.path);
+      if (expanded) expandedPaths.add(entry.path); else expandedPaths.delete(entry.path);
+      expand(expanded);
+      if (expanded) await load();
+    });
+    if (expandedPaths.has(entry.path)) { expand(true); await load(); }
+  } else {
+    header.addEventListener("click", () => {
+      document.querySelectorAll(".tree-item.active-file").forEach(row => row.classList.remove("active-file"));
+      item.classList.add("active-file");
+      selectedFilePath = entry.path;
+      if (previewBody) showFilePreview(entry.path);
+      if (document.body.classList.contains("sidebar-mode")) openFile(entry.path);
+    });
+  }
+  return item;
+}
+async function openFile(filePath) {
+  try { await api.openFile(filePath); }
+  catch (error) { showError(previewBody || treeContainer, error); }
+}
+function showMediaPreview(info) {
+  const tag = { image: "img", audio: "audio", video: "video" }[info.kind];
+  const wrapper = node("div", `${info.kind}-preview-wrapper`);
+  const media = node(tag);
+  media.src = info.url;
+  if (tag === "img") media.alt = info.name;
+  else {
+    media.controls = true;
+    if (tag === "audio") wrapper.append(node("span", "media-icon", "🎵"));
+  }
+  media.addEventListener("error", () => wrapper.replaceChildren(node("p", "error-message", "This file could not be previewed. Use Open to view it in another application.")));
+  wrapper.append(media);
   previewBody.replaceChildren(wrapper);
 }
-
-// Generate File Preview Details
-function showFilePreview(filePath) {
-  if (!filePath) return;
-
-  const fileName = path.basename(filePath);
-  const ext = path.extname(fileName).toLowerCase();
-  
-  // Enable header button
-  if (openFileBtn) openFileBtn.disabled = false;
-  if (previewTitle) previewTitle.textContent = fileName;
-
-  // Read stats
-  let stat;
+async function showFilePreview(filePath) {
+  const version = ++previewVersion;
+  $("preview-meta")?.replaceChildren();
+  previewBody.replaceChildren(node("p", "status-message", "Loading preview..."));
+  $("preview-title").textContent = basename(filePath);
+  $("open-file-btn").disabled = true;
   try {
-    stat = fs.statSync(filePath);
-  } catch (e) {
-    if (previewMeta) previewMeta.innerHTML = `<span style="color:var(--danger-color);">Error reading file stats.</span>`;
-    return;
-  }
-
-  // Render metadata panel
-  const sizeStr = formatBytes(stat.size);
-  const mtimeStr = formatDate(stat.mtime);
-  
-  if (previewMeta) {
-    previewMeta.innerHTML = `
-      <div class="meta-row copy-path-row">
-        <span class="meta-key">Full Path:</span>
-        <span class="meta-val" style="font-family:monospace; font-size:11px;">${filePath}</span>
-        <button class="copy-btn" id="copy-path-btn">
-          📋 Copy
-          <span class="copy-tooltip" id="copy-tip">Copied!</span>
-        </button>
-      </div>
-      <div class="meta-row">
-        <span class="meta-key">File Size:</span>
-        <span class="meta-val">${sizeStr}</span>
-      </div>
-      <div class="meta-row">
-        <span class="meta-key">Modified Date:</span>
-        <span class="meta-val">${mtimeStr}</span>
-      </div>
-    `;
-
-    // Attach copy path action
-    const copyBtn = document.getElementById("copy-path-btn");
-    if (copyBtn) {
-      copyBtn.addEventListener("click", () => {
-        navigator.clipboard.writeText(filePath).then(() => {
-          const tooltip = document.getElementById("copy-tip");
-          if (tooltip) {
-            copyBtn.classList.add("show-tooltip");
-            setTimeout(() => {
-              copyBtn.classList.remove("show-tooltip");
-            }, 1500);
-          }
+    const info = await api.preview(filePath);
+    if (version !== previewVersion) return;
+    $("open-file-btn").disabled = false;
+    $("preview-title").textContent = info.name;
+    const meta = $("preview-meta");
+    for (const [label, value] of [["Full Path:", info.path], ["File Size:", formatBytes(info.size)], ["Modified Date:", formatDate(info.mtimeMs)]]) {
+      const row = node("div", "meta-row");
+      row.append(node("span", "meta-key", label), node("span", "meta-val", value));
+      if (label === "Full Path:") {
+        row.classList.add("copy-path-row");
+        const copy = node("button", "copy-btn", "📋 Copy");
+        copy.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(info.path);
+            copy.textContent = "Copied!";
+            setTimeout(() => { copy.textContent = "📋 Copy"; }, 1500);
+          } catch { copy.textContent = "Copy failed"; }
         });
-      });
-    }
-  }
-
-  // Clear and load Preview Content body
-  if (previewBody) {
-    previewBody.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);">Loading preview...</div>`;
-
-    // Images
-    if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) {
-      showMediaPreview(filePath, "img", "image-preview-wrapper");
-    }
-    // Audio players
-    else if ([".mp3", ".wav", ".ogg"].includes(ext)) {
-      showMediaPreview(filePath, "audio", "audio-preview-wrapper");
-    }
-    // Video players
-    else if ([".mp4", ".webm", ".mkv"].includes(ext)) {
-      showMediaPreview(filePath, "video", "video-preview-wrapper");
-    }
-    // Text & Code files
-    else if ([".js", ".ts", ".json", ".html", ".css", ".md", ".py", ".cpp", ".h", ".txt", ".ini", ".cfg", ".xml", ".yaml", ".yml", ".bat", ".sh"].includes(ext)) {
-      try {
-        // Handle huge text files gracefully: read max 50KB
-        const fd = fs.openSync(filePath, "r");
-        const buffer = Buffer.alloc(50000);
-        const bytesRead = fs.readSync(fd, buffer, 0, 50000, 0);
-        let content = buffer.toString("utf8", 0, bytesRead);
-        fs.closeSync(fd);
-
-        if (stat.size > 50000) {
-          content += "\n\n... [Truncated! File size exceeds 50KB limit] ...";
-        }
-
-        const escaped = escapeHTML(content);
-        const lines = escaped.split("\n");
-        const lineNumbers = lines.map((_, index) => index + 1).join("<br>");
-        
-        previewBody.innerHTML = `
-          <div class="code-preview-wrapper">
-            <div class="code-line-numbers">${lineNumbers}</div>
-            <div class="code-content">${escaped}</div>
-          </div>
-        `;
-      } catch (e) {
-        previewBody.innerHTML = `<p style="color:var(--danger-color);">Could not read text preview: ${e.message}</p>`;
+        row.append(copy);
       }
+      meta?.append(row);
     }
-    // PDFs, Microsoft Documents, Spreadsheet, Slides
-    else {
-      let docEmoji = "📝";
-      let docType = "Generic File";
-      let docColor = "var(--text-muted)";
-      
-      if (ext === ".pdf") {
-        docEmoji = "📕";
-        docType = "PDF Document";
-        docColor = "var(--danger-color)";
-      } else if ([".doc", ".docx"].includes(ext)) {
-        docEmoji = "📘";
-        docType = "Word Document";
-        docColor = "#3b82f6";
-      } else if ([".xls", ".xlsx", ".csv"].includes(ext)) {
-        docEmoji = "📗";
-        docType = "Excel Spreadsheet";
-        docColor = "var(--success-color)";
-      } else if ([".ppt", ".pptx"].includes(ext)) {
-        docEmoji = "📙";
-        docType = "PowerPoint Presentation";
-        docColor = "#f97316";
-      }
-
-      previewBody.innerHTML = `
-        <div class="document-placeholder-card">
-          <span class="document-icon" style="color:${docColor};">${docEmoji}</span>
-          <div class="document-info-title">${docType}</div>
-          <div class="document-info-desc">A direct interactive preview is not available in-app. Click the button below to launch it using your system's default program.</div>
-          <button class="open-external-btn" id="card-open-btn">Open File</button>
-        </div>
-      `;
-
-      const cardOpenBtn = document.getElementById("card-open-btn");
-      if (cardOpenBtn) {
-        cardOpenBtn.addEventListener("click", () => {
-          openFile(filePath);
-        });
-      }
+    if (["image", "audio", "video"].includes(info.kind)) showMediaPreview(info);
+    else if (info.kind === "text") {
+      const content = info.text + (info.truncated ? "\n\n... [Truncated! File size exceeds 50KB limit] ..." : "");
+      const wrapper = node("div", "code-preview-wrapper");
+      wrapper.append(node("div", "code-line-numbers", content.split("\n").map((_, index) => index + 1).join("\n")), node("div", "code-content", content));
+      previewBody.replaceChildren(wrapper);
+    } else {
+      const types = { ".pdf": "PDF Document", ".doc": "Word Document", ".docx": "Word Document", ".xls": "Excel Spreadsheet", ".xlsx": "Excel Spreadsheet", ".csv": "Excel Spreadsheet", ".ppt": "PowerPoint Presentation", ".pptx": "PowerPoint Presentation" };
+      const card = node("div", "document-placeholder-card");
+      const open = node("button", "open-external-btn", "Open File");
+      open.addEventListener("click", () => openFile(info.path));
+      card.append(node("span", "document-icon", "📄"), node("div", "document-info-title", types[info.extension] || "Generic File"), node("div", "document-info-desc", "A preview is not available. Open this file using your system's default program."), open);
+      previewBody.replaceChildren(card);
     }
-  }
+  } catch (error) { if (version === previewVersion) showError(previewBody, error); }
 }
-
-// Pinned Folders Operations
 function renderPinnedList() {
-  if (!pinnedList) return;
-  pinnedList.innerHTML = "";
-
-  if (pinnedFolders.length === 0) {
-    pinnedList.innerHTML = `<p style="font-size:12px; color:var(--text-muted); padding: 5px 0;">No favorite folders pinned yet.</p>`;
-    return;
-  }
-
-  pinnedFolders.forEach((folderPath) => {
-    const name = path.basename(folderPath) || folderPath;
-    
-    const item = document.createElement("div");
-    item.classList.add("pinned-item");
-    item.title = folderPath; // Show full path on hover
-
-    item.innerHTML = `
-      <div class="pinned-item-info">
-        <span>📁</span>
-        <span class="pinned-item-name">${name}</span>
-      </div>
-      <button class="unpin-btn" title="Unpin folder">×</button>
-    `;
-
-    // Click to open folder
-    item.addEventListener("click", (e) => {
-      // Don't trigger if they clicked the unpin close button
-      if (e.target.classList.contains("unpin-btn")) return;
-      openRootFolder(folderPath);
-    });
-
-    // Unpin action
-    const unpin = item.querySelector(".unpin-btn");
-    unpin.addEventListener("click", (e) => {
-      e.stopPropagation();
-      pinnedFolders = pinnedFolders.filter(p => p !== folderPath);
+  const list = $("pinned-list");
+  if (!list) return;
+  list.replaceChildren();
+  if (!pinnedFolders.length) list.append(node("p", "status-message", "No favorite folders pinned yet."));
+  for (const folderPath of pinnedFolders) {
+    const item = node("div", "pinned-item");
+    item.title = folderPath;
+    const info = node("div", "pinned-item-info");
+    info.append(node("span", "", "📁"), node("span", "pinned-item-name", basename(folderPath)));
+    const unpin = node("button", "unpin-btn", "×");
+    unpin.title = "Unpin folder";
+    unpin.addEventListener("click", event => {
+      event.stopPropagation();
+      pinnedFolders = pinnedFolders.filter(value => value !== folderPath);
       localStorage.setItem("pinnedFolders", JSON.stringify(pinnedFolders));
-      renderPinnedList();
-      updatePinButtonState();
+      renderPinnedList(); updatePinButtonState();
     });
-
-    pinnedList.appendChild(item);
-  });
+    item.addEventListener("click", () => openRootFolder(folderPath));
+    item.append(info, unpin);
+    list.append(item);
+  }
 }
-
 function updatePinButtonState() {
-  if (!pinBtn) return;
-  
-  if (!currentRootPath) {
-    pinBtn.disabled = true;
-    pinBtn.textContent = "📌 Pin Current Folder";
-    return;
-  }
-
-  pinBtn.disabled = false;
-  const isPinned = pinnedFolders.includes(currentRootPath);
-  if (isPinned) {
-    pinBtn.textContent = "📍 Pinned";
-    pinBtn.style.opacity = "0.7";
-  } else {
-    pinBtn.textContent = "📌 Pin Current Folder";
-    pinBtn.style.opacity = "1";
-  }
+  const button = $("pin-btn");
+  if (!button) return;
+  const pinned = pinnedFolders.includes(currentRootPath);
+  button.disabled = !currentRootPath || pinned;
+  button.textContent = pinned ? "📍 Pinned" : "📌 Pin Current Folder";
 }
-
-// Event Listeners Setup
-if (btnSelectFolder) {
-  btnSelectFolder.addEventListener("click", async () => {
-    const folderPath = await ipcRenderer.invoke("select-folder");
-    if (folderPath) {
-      openRootFolder(folderPath);
-    }
-  });
+function initSettings() {
+  const savedTheme = localStorage.getItem("theme");
+  const theme = savedTheme === "light" ? "light" : "dark";
+  document.body.setAttribute("data-theme", theme);
+  if ($("theme-select")) $("theme-select").value = theme;
+  pinnedFolders = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem("pinnedFolders"));
+    if (Array.isArray(saved)) pinnedFolders = [...new Set(saved.filter(value => typeof value === "string" && value.trim() && !value.includes("\0") && isAbsolute(value)))];
+  } catch { /* Ignore corrupt saved favorites. */ }
+  renderPinnedList(); updatePinButtonState();
 }
-
-if (pinBtn) {
-  pinBtn.addEventListener("click", () => {
-    if (currentRootPath && !pinnedFolders.includes(currentRootPath)) {
-      pinnedFolders.push(currentRootPath);
-      localStorage.setItem("pinnedFolders", JSON.stringify(pinnedFolders));
-      renderPinnedList();
-      updatePinButtonState();
-    }
-  });
-}
-
-// Re-render when controls change
-[filterSelect, sortSelect, toggleDate, toggleSize].forEach(control => {
-  if (control) {
-    control.addEventListener("change", () => {
-      // Clear caches on control toggle (sizes and match caches might need fresh calculations)
-      folderSizeCache.clear();
-      filterMatchCache.clear();
-      renderTree();
-    });
+$("btn")?.addEventListener("click", async () => {
+  try { const value = await api.selectFolder(); if (value) await openRootFolder(value); }
+  catch (error) { showError(treeContainer, error); }
+});
+$("theme-select")?.addEventListener("change", event => {
+  const theme = event.target.value;
+  document.body.setAttribute("data-theme", theme);
+  localStorage.setItem("theme", theme);
+  api.setTheme(theme);
+});
+$("pin-btn")?.addEventListener("click", () => {
+  if (currentRootPath && !pinnedFolders.includes(currentRootPath)) {
+    pinnedFolders.push(currentRootPath);
+    localStorage.setItem("pinnedFolders", JSON.stringify(pinnedFolders));
+    renderPinnedList(); updatePinButtonState();
   }
 });
-
-// Open File Button in Header
-if (openFileBtn) {
-  openFileBtn.addEventListener("click", () => {
-    if (selectedFilePath) {
-      openFile(selectedFilePath);
-    }
-  });
-}
-
-// Run Initialization
-document.addEventListener("DOMContentLoaded", initSettings);
-// Fallback if DOMContentLoaded already fired
-if (document.readyState === "interactive" || document.readyState === "complete") {
-  initSettings();
-}
-
-const smartSidebarToggle = document.getElementById("smartSidebarToggle");
-
-if (smartSidebarToggle) {
-  smartSidebarToggle.addEventListener("change", () => {
-    ipcRenderer.send("toggle-smart-sidebar", smartSidebarToggle.checked);
-  });
-}
-
-// Make openRootFolder globally accessible
-// Sidebar window can reuse same tree rendering logic
-window.openRootFolder =
-  openRootFolder;
+for (const id of ["filter-select", "sort-select", "toggle-date", "toggle-size"]) $(id)?.addEventListener("change", renderTree);
+$("open-file-btn")?.addEventListener("click", () => { if (selectedFilePath) openFile(selectedFilePath); });
+$("smartSidebarToggle")?.addEventListener("change", event => api.setSidebar(event.target.checked));
+initSettings();
+window.openRootFolder = openRootFolder;

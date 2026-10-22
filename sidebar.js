@@ -1,12 +1,12 @@
 (() => {
-  const { ipcRenderer } = require("electron");
+  const api = window.folderTree;
 
-  ipcRenderer.on("theme-updated", (_, theme) => {
+  api.onTheme(theme => {
     document.body.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   });
 
-  ipcRenderer.on("explorer-path-update", (_, folderPath) => {
+  api.onExplorerPath(folderPath => {
     if (typeof window.openRootFolder === "function") {
       window.openRootFolder(folderPath);
     } else {

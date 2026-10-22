@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' file:; media-src file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
   <title>🌳 Folder Tree Explorer</title>
   <!-- Outfit Google Font -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -81,12 +82,12 @@
               <span class="switch-label">Show file/folder size</span>
             </label>
 
-            <label class="toggle-switch" style="margin-top: 8px;">
+            <label class="toggle-switch smart-sidebar-switch">
               <input type="checkbox" id="smartSidebarToggle">
               <span class="switch-slider"></span>
-              <span class="switch-label" style="font-weight: 500;">Smart Explorer Sidebar</span>
+              <span class="switch-label">Smart Explorer Sidebar</span>
             </label>
-            <span class="toggle-help" style="font-size: 11px; color: var(--text-muted); margin-left: 44px; margin-top: -6px; display: block; line-height: 1.3;">Integrates as a docked side-panel next to active File Explorer windows (Beta).</span>
+            <span class="toggle-help">Integrates as a docked side-panel next to active File Explorer windows (Beta).</span>
           </div>
 
           <button id="pin-btn" class="secondary-btn">📌 Pin Current Folder</button>

@@ -4,13 +4,46 @@ const {
   BrowserWindow,
   ipcMain,
   dialog,
-  Menu
+  Menu,
+  shell
 } = require("electron");
 // import path module (used for file paths)
 const path = require("path");
 // import spawn to run powershell script
 const { spawn } = require("child_process");
 const readline = require("readline");
+const { pathToFileURL } = require("url");
+const { createFileSession } = require("./file-service");
+const fileSessions = new WeakMap();
+const trustedPages = new WeakMap();
+
+function isTrustedSender(event, mainOnly = false) {
+  const windows = mainOnly ? [win] : [win, sidebarWindow];
+  return windows.some(window => window && !window.isDestroyed() &&
+    event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame &&
+    event.senderFrame?.url === trustedPages.get(window.webContents));
+}
+function requireTrustedSender(event, mainOnly = false) {
+  if (!isTrustedSender(event, mainOnly)) throw new Error("Unauthorized request");
+}
+function secureWindow(window, file) {
+  const contents = window.webContents;
+  const url = pathToFileURL(path.join(__dirname, file)).href;
+  trustedPages.set(contents, url);
+  fileSessions.set(contents, createFileSession());
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.on("will-navigate", (event, target) => { if (target !== url) event.preventDefault(); });
+  contents.on("will-redirect", (event, target) => { if (target !== url) event.preventDefault(); });
+  contents.on("will-frame-navigate", (event, details) => {
+    if (!details.isMainFrame || details.url !== url) event.preventDefault();
+  });
+  contents.on("will-attach-webview", event => event.preventDefault());
+  contents.session.setPermissionRequestHandler((sender, permission, callback) => {
+    const trusted = [win, sidebarWindow].some(window => window && !window.isDestroyed() &&
+      sender === window.webContents && sender.mainFrame.url === trustedPages.get(sender));
+    callback(trusted && permission === "clipboard-sanitized-write");
+  });
+}
 // store the Electron window
 let win;
 let sidebarWindow;
@@ -81,12 +114,16 @@ function createWindow() {
     minHeight: 500,
     // browser settings
     webPreferences: {
-      nodeIntegration: true,// allow Node.js in renderer
-      contextIsolation: false// disable context isolation
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webviewTag: false
     }
   });
 
   // load index.html into the window
+  secureWindow(win, "index.html");
   win.loadFile("index.html");
 
   // Remove default Electron menu
@@ -101,11 +138,15 @@ function createWindow() {
     alwaysOnTop: true,
     hasShadow: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webviewTag: false
     }
   });
 
+  secureWindow(sidebarWindow, "sidebar.html");
   sidebarWindow.loadFile("sidebar.html");
 
   // The hidden sidebar must not keep the application alive after its main window closes.
@@ -250,7 +291,8 @@ function startExplorerWatcher() {
 
 // IPC function for folder picker
 // Renderer (frontend) can call this
-ipcMain.handle("select-folder", async () => {
+ipcMain.handle("select-folder", async event => {
+  requireTrustedSender(event, true);
 
   // open folder selection dialog
   const result = await dialog.showOpenDialog({
@@ -266,8 +308,9 @@ ipcMain.handle("select-folder", async () => {
 
 ipcMain.on(
   "toggle-smart-sidebar",
-  async (_, enabled) => {
-    smartSidebarEnabled = !!enabled;
+  async (event, enabled) => {
+    if (!isTrustedSender(event, true) || typeof enabled !== "boolean") return;
+    smartSidebarEnabled = enabled;
 
     // Turn ON sidebar feature
     if (enabled) {
@@ -297,17 +340,35 @@ ipcMain.on(
 );
 
 ipcMain.on("theme-changed", (event, theme) => {
+  if (!isTrustedSender(event, true) || !["light", "dark"].includes(theme)) return;
   if (sidebarWindow && !sidebarWindow.isDestroyed()) {
     sidebarWindow.webContents.send("theme-updated", theme);
   }
 });
 
-ipcMain.on("file-open-failed", (event, filePath, message) => {
-  const senderIsAppWindow = [win, sidebarWindow].some(window =>
-    window && !window.isDestroyed() && window.webContents === event.sender
-  );
-  if (!senderIsAppWindow || typeof filePath !== "string" || typeof message !== "string") return;
-  dialog.showErrorBox("Could not open file", `${filePath}\n\n${message}`);
+ipcMain.handle("browse-root", (event, value, showSize = false) => {
+  requireTrustedSender(event);
+  return fileSessions.get(event.sender).openRoot(value, showSize);
+});
+ipcMain.handle("read-directory", (event, value, options) => {
+  requireTrustedSender(event);
+  return fileSessions.get(event.sender).readDirectory(value, options);
+});
+ipcMain.handle("preview-file", (event, value) => {
+  requireTrustedSender(event);
+  return fileSessions.get(event.sender).preview(value);
+});
+ipcMain.handle("open-file", async (event, value) => {
+  requireTrustedSender(event);
+  try {
+    const resolved = await fileSessions.get(event.sender).fileToOpen(value);
+    const error = await shell.openPath(resolved);
+    if (error) throw new Error(error);
+    return true;
+  } catch (error) {
+    dialog.showErrorBox("Could not open file", error.message);
+    return false;
+  }
 });
 
 

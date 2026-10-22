@@ -41,6 +41,14 @@ While the native Windows File Explorer is capable, it has several limitations fo
 
 Folder Tree Explorer leverages Electron's multi-process architecture combined with a high-performance Windows API background watcher written in PowerShell.
 
+Both application windows run with Node integration disabled, context isolation enabled, and renderer sandboxing enabled. `preload.js` exposes fixed methods through `window.folderTree`; it does not expose raw IPC or Node modules. `main.js` validates each caller's window, main frame, document URL, and request arguments before delegating filesystem requests to `file-service.js`.
+
+Each window has its own active browsing folder. Directory reads, bounded text previews, media URLs, and file opening are checked against that folder using canonical paths; links outside it are skipped. Directory junctions and symlinks are omitted from tree rows to prevent cyclic expansion. Selecting another folder or opening a favorite explicitly changes that window's browsing root. Text previews are limited to 50,000 bytes, and directories/special files cannot be opened as file previews. The API provides no filesystem write or arbitrary command-execution method.
+
+The UI constructs dynamic content using DOM properties and `textContent`. Both pages enforce a Content Security Policy that blocks inline scripts, frames, plugins, forms, and network connections. The existing Google Fonts stylesheet and fonts remain allowed. Navigation away from the application pages, embedded webviews, and popup windows are blocked.
+
+Run `npm.cmd test` to exercise the security boundary and browsing regressions. These checks use mocked Electron windows and temporary filesystem fixtures; they do not replace manual testing of native Explorer docking and display scaling.
+
 ### System Architecture
 
 ```mermaid

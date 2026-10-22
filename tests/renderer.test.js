@@ -3,135 +3,81 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const { pathToFileURL } = require("node:url");
 
 function element(tagName = "div") {
-  return {
-    tagName, children: [], classList: { contains: () => false },
-    addEventListener() {}, setAttribute() {},
-    appendChild(child) { this.children.push(child); },
+  const classes = new Set();
+  const result = {
+    tagName, children: [], handlers: {}, style: {},
+    classList: { add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value), toggle(value, force) { if (force) classes.add(value); else classes.delete(value); } },
+    addEventListener(name, handler) { this.handlers[name] = handler; },
+    setAttribute() {}, append(...children) { this.children.push(...children); },
     replaceChildren(...children) { this.children = children; }
   };
+  Object.defineProperty(result, "innerHTML", { set() { throw new Error("Unsafe HTML insertion"); } });
+  return result;
 }
 
-function renderer({ elements = {}, filesystem = {}, savedPins = null, openPath = async () => "" } = {}) {
-  const messages = [];
+function renderer({ savedPins = null, api = {} } = {}) {
+  const elements = Object.fromEntries(["tree-container", "path", "preview-body", "preview-meta", "preview-title", "open-file-btn", "pinned-list", "pin-btn"].map(id => [id, element()]));
   const context = {
-    require(name) {
-      if (name === "electron") return {
-        ipcRenderer: { send: (...args) => messages.push(args) }, shell: { openPath }
-      };
-      if (name === "fs") return filesystem;
-      return require(name);
-    },
-    document: {
-      getElementById: id => elements[id] || null, createElement: element,
-      body: element("body"), readyState: "loading", addEventListener() {}
-    },
-    localStorage: { getItem: key => key === "pinnedFolders" ? savedPins : null },
-    window: {}, console, Buffer
+    document: { getElementById: id => elements[id] || null, createElement: element, body: element("body"), querySelectorAll: () => [] },
+    localStorage: { getItem: key => key === "pinnedFolders" ? savedPins : null, setItem() {} },
+    window: { folderTree: api }, console, setTimeout
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../renderer.js"), "utf8"), context);
-  return { context, messages, run: source => vm.runInContext(source, context) };
+  return { context, elements, run: source => vm.runInContext(source, context) };
 }
 
-test("size sorting calculates directory sizes with size display disabled or absent", () => {
-  const root = path.resolve("example");
-  const entries = new Map([
-    [root, ["large", "small"]],
-    [path.join(root, "large"), ["data.bin"]],
-    [path.join(root, "small"), ["data.bin"]]
-  ]);
-  for (const sizeToggle of [undefined, { ...element(), checked: false }]) {
-    for (const order of ["size-asc", "size-desc"]) {
-      const fixture = renderer({
-        elements: { "sort-select": { ...element(), value: order }, "toggle-size": sizeToggle },
-        filesystem: {
-          readdirSync: location => entries.get(location),
-          statSync: location => ({
-            isDirectory: () => entries.has(location),
-            size: location.includes(`${path.sep}large${path.sep}`) ? 100 : 5,
-            mtimeMs: 0
-          })
-        }
-      });
-      // Isolate row construction while exercising real loading, sizing and sorting.
-      fixture.run("buildTreeNode = location => ({ location })");
-      const container = element();
-      fixture.context.container = container;
-      fixture.context.root = root;
-      fixture.run("loadChildren(root, container)");
-      assert.deepEqual(container.children.map(child => path.basename(child.location)),
-        order === "size-asc" ? ["small", "large"] : ["large", "small"]);
-    }
-  }
-});
-
-test("recursive filters skip unreadable entries and continue to later nested matches", () => {
-  const root = path.resolve("example");
-  const nested = path.join(root, "nested");
-  const fixture = renderer({ filesystem: {
-    readdirSync: location => location === root ? ["blocked", "nested"] : ["blocked", "match.png"],
-    statSync: location => {
-      if (path.basename(location) === "blocked") throw new Error("Access denied");
-      return { isDirectory: () => location === nested, size: 20 };
-    }
-  } });
-  fixture.context.root = root;
-  assert.equal(fixture.run("dirHasMatch(root, 'png')"), true);
-  assert.equal(fixture.run("getFolderSize(root)"), 20);
-});
-
-test("unreadable directories return no matches without throwing", () => {
-  const fixture = renderer({ filesystem: { readdirSync() { throw new Error("Access denied"); } } });
-  assert.equal(fixture.run("dirHasMatch('blocked', 'png')"), false);
-});
-
-test("favorites accept only arrays of valid absolute paths and remove duplicates", () => {
-  const valid = path.resolve("favorites");
-  const cases = [
+test("renderer initializes without Node globals and validates saved favorites", () => {
+  const valid = "C:\\favorites";
+  for (const [savedPins, expected] of [
     ["{}", []], ["null", []], ['"hello"', []], ["1", []], ["{invalid", []],
     [JSON.stringify([null, {}, 42, "", " ", "relative", "bad\0path", valid, valid]), [valid]]
-  ];
-  for (const [savedPins, expected] of cases) {
+  ]) {
     const fixture = renderer({ savedPins });
-    fixture.run("initSettings()");
+    assert.equal(fixture.run("typeof require"), "undefined");
     assert.deepEqual(Array.from(fixture.run("pinnedFolders")), expected);
   }
 });
 
-test("image, audio and video previews preserve special characters and Unicode in URLs", () => {
-  for (const [extension, tag] of [["png", "img"], ["mp3", "audio"], ["mp4", "video"]]) {
-    const body = element();
-    const filePath = path.resolve(`日本語 #1 100% & 'sample'.${extension}`);
-    const fixture = renderer({
-      elements: { "preview-body": body },
-      filesystem: { statSync: () => ({ size: 100, mtime: new Date() }) }
-    });
-    fixture.context.filePath = filePath;
-    fixture.run("showFilePreview(filePath)");
-    const media = body.children[0].children.find(child => child.tagName === tag);
-    assert.equal(media.src, pathToFileURL(filePath).href);
-    assert.equal(new URL(media.src).hash, "");
-    if (tag === "img") assert.equal(media.alt, path.basename(filePath));
-    else assert.equal(media.controls, true);
+test("filenames, favorite labels and text previews render as text without HTML sinks", async () => {
+  const name = '<img src=x onerror="alert(1)">.txt';
+  const info = { path: `C:\\root\\${name}`, name, isDirectory: false, extension: ".txt", size: 30, mtimeMs: 0, kind: "text", text: "<script>alert(1)</script>\n&hello" };
+  const fixture = renderer({ api: { preview: async () => info } });
+  fixture.context.info = info;
+  const row = await fixture.run("buildTreeNode(info, treeVersion)");
+  assert.equal(row.children[0].children[1].textContent, name);
+  await fixture.run("showFilePreview(info.path)");
+  assert.equal(fixture.elements["preview-body"].children[0].children[1].textContent, info.text);
+  fixture.run('pinnedFolders = ["C:\\\\root\\\\<img src=x>"]; renderPinnedList()');
+  assert.equal(fixture.elements["pinned-list"].children.length, 1);
+});
+
+test("media previews use validated backend URLs and preserve controls", async () => {
+  for (const [kind, tag] of [["image", "img"], ["audio", "audio"], ["video", "video"]]) {
+    const info = { path: "C:\\root\\sample", name: "日本語 #100%", size: 10, mtimeMs: 0, kind, url: "file:///C:/root/%E6%97%A5%23100%25" };
+    const fixture = renderer({ api: { preview: async () => info } });
+    await fixture.run("showFilePreview('C:/root/sample')");
+    const media = fixture.elements["preview-body"].children[0].children.find(child => child.tagName === tag);
+    assert.equal(media.src, info.url);
+    if (tag === "img") assert.equal(media.alt, info.name); else assert.equal(media.controls, true);
   }
 });
 
-test("file opening reports resolved errors and rejected requests, but stays quiet on success", async () => {
-  for (const [openPath, expectedMessages] of [
-    [async () => "", 0],
-    [async () => "File not found", 1],
-    [async () => { throw new Error("Access denied"); }, 1]
-  ]) {
-    const fixture = renderer({ openPath });
-    await fixture.run("openFile('C:/missing.txt')");
-    assert.equal(fixture.messages.length, expectedMessages);
-    if (expectedMessages) {
-      assert.equal(fixture.messages[0][0], "file-open-failed");
-      assert.equal(fixture.messages[0][1], "C:/missing.txt");
-      assert.ok(fixture.messages[0][2].length > 0);
-    }
-  }
+test("late preview responses cannot overwrite the latest selection", async () => {
+  let finishFirst;
+  const fixture = renderer({ api: { preview: value => value === "first" ? new Promise(resolve => { finishFirst = resolve; }) : Promise.resolve({ path: "second", name: "second", size: 1, mtimeMs: 0, kind: "text", text: "new" }) } });
+  const first = fixture.run("showFilePreview('first')");
+  await fixture.run("showFilePreview('second')");
+  finishFirst({ path: "first", name: "first", kind: "text", text: "old" });
+  await first;
+  assert.equal(fixture.elements["preview-title"].textContent, "second");
+});
+
+test("renderer delegates opening files to the fixed API", async () => {
+  const opened = [];
+  const fixture = renderer({ api: { openFile: async value => opened.push(value) } });
+  await fixture.run("openFile('C:/root/sample.txt')");
+  assert.deepEqual(opened, ["C:/root/sample.txt"]);
 });

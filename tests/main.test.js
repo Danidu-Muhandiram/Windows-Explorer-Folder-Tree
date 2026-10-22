@@ -8,7 +8,7 @@ const { PassThrough } = require("node:stream");
 const { execFileSync } = require("node:child_process");
 
 // Exercise the real main process handlers without opening or resizing desktop windows.
-function createApp() {
+function createApp({ openPath = async () => "" } = {}) {
   const windows = [];
   const watchers = [];
   const handlers = {};
@@ -29,16 +29,20 @@ function createApp() {
   class Window extends EventEmitter {
     constructor(options) {
       super();
+      this.options = options;
       this.visible = !!options.show;
       this.destroyed = false;
       this.messages = [];
       this.webContents = new EventEmitter();
+      this.webContents.mainFrame = { url: "" };
+      this.webContents.setWindowOpenHandler = handler => { this.webContents.openHandler = handler; };
+      this.webContents.session = { setPermissionRequestHandler() {} };
       this.webContents.loading = false;
       this.webContents.isLoading = () => this.webContents.loading;
       this.webContents.send = (...args) => this.messages.push(args);
       windows.push(this);
     }
-    loadFile() {}
+    loadFile(file) { this.webContents.mainFrame.url = require("node:url").pathToFileURL(path.resolve(__dirname, "..", file)).href; }
     isDestroyed() { return this.destroyed; }
     isFocused() { return false; }
     setAlwaysOnTop() {}
@@ -52,7 +56,8 @@ function createApp() {
     require(name) {
       if (name === "electron") return {
         app, BrowserWindow: Window,
-        ipcMain: { handle() {}, on: (name, fn) => { handlers[name] = fn; } },
+        ipcMain: { handle: (name, fn) => { handlers[name] = fn; }, on: (name, fn) => { handlers[name] = fn; } },
+        shell: { openPath },
         dialog: { showErrorBox: (...args) => dialogs.push(args) }, Menu: { setApplicationMenu() {} }
       };
       if (name === "child_process") return { spawn() {
@@ -66,7 +71,7 @@ function createApp() {
         watchers.push(watcher);
         return watcher;
       } };
-      return require(name);
+      return require(name === "./file-service" ? "../file-service" : name);
     },
     __dirname: path.resolve(__dirname, ".."), process,
     console: { log() {}, error: (...args) => errors.push(args) },
@@ -75,8 +80,9 @@ function createApp() {
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../main.js"), "utf8"), context);
   return { app, windows, watchers, timers, errors, dialogs,
-    reportOpenFailure: (sender, filePath, message) => handlers["file-open-failed"]({ sender }, filePath, message),
-    toggle: (enabled) => handlers["toggle-smart-sidebar"]({}, enabled) };
+    invoke: (channel, window, ...args) => handlers[channel]({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, ...args),
+    rawInvoke: (channel, event, ...args) => handlers[channel](event, ...args),
+    toggle: (enabled) => handlers["toggle-smart-sidebar"]({ sender: windows[0].webContents, senderFrame: windows[0].webContents.mainFrame }, enabled) };
 }
 
 const state = (overrides = {}) => ({
@@ -196,13 +202,42 @@ test("unexpected watcher exit permits restart and resends the current folder", a
   assert.equal(fixture.windows[1].messages.length, 2);
 });
 
-test("file-open failures appear in a native dialog only for app windows", () => {
+test("file-open failures appear in native dialogs for validated app windows", async () => {
+  const fixture = createApp({ openPath: async () => "No default application" });
+  for (const window of fixture.windows) {
+    await fixture.invoke("browse-root", window, __dirname);
+    assert.equal(await fixture.invoke("open-file", window, __filename), false);
+  }
+  assert.equal(fixture.dialogs.length, 2);
+  assert.deepEqual(fixture.dialogs[0], ["Could not open file", "No default application"]);
+});
+
+test("both windows are sandboxed, isolated and block navigation and popups", () => {
   const fixture = createApp();
   for (const window of fixture.windows) {
-    fixture.reportOpenFailure(window.webContents, "C:\\missing.txt", "File not found");
+    assert.equal(window.options.webPreferences.nodeIntegration, false);
+    assert.equal(window.options.webPreferences.contextIsolation, true);
+    assert.equal(window.options.webPreferences.sandbox, true);
+    assert.ok(window.options.webPreferences.preload.endsWith("preload.js"));
+    assert.equal(window.webContents.openHandler().action, "deny");
+    let blocked = false;
+    window.webContents.emit("will-navigate", { preventDefault() { blocked = true; } }, "https://example.com");
+    assert.equal(blocked, true);
+    blocked = false;
+    window.webContents.emit("will-frame-navigate", { preventDefault() { blocked = true; } }, { isMainFrame: false, url: window.webContents.mainFrame.url });
+    assert.equal(blocked, true);
   }
-  fixture.reportOpenFailure({}, "C:\\missing.txt", "Untrusted sender");
-  fixture.reportOpenFailure(fixture.windows[0].webContents, {}, "Invalid path");
-  assert.equal(fixture.dialogs.length, 2);
-  assert.deepEqual(fixture.dialogs[0], ["Could not open file", "C:\\missing.txt\n\nFile not found"]);
+});
+
+test("filesystem IPC rejects unknown senders, subframes and navigated documents", async () => {
+  const fixture = createApp();
+  const window = fixture.windows[0];
+  for (const event of [
+    { sender: {}, senderFrame: window.webContents.mainFrame },
+    { sender: window.webContents, senderFrame: { url: window.webContents.mainFrame.url } }
+  ]) {
+    assert.throws(() => fixture.rawInvoke("browse-root", event, __dirname), /Unauthorized/);
+  }
+  window.webContents.mainFrame.url = "https://example.com";
+  assert.throws(() => fixture.invoke("browse-root", window, __dirname), /Unauthorized/);
 });
