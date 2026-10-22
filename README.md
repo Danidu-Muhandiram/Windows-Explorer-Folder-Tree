@@ -90,13 +90,8 @@ The **Smart Explorer Sidebar** integrates the desktop app directly into the oper
    $path = $targetWindow.Document.Folder.Self.Path
    ```
    This path is serialized into JSON and written to standard output. Electron parses the JSON stream, updates the sidebar window context, and triggers a tree re-render.
-5. **Bidirectional Navigation**:
-   * **Explorer to Sidebar**: Navigating folders inside File Explorer automatically updates the sidebar's tree view.
-   * **Sidebar to Explorer**: Clicking a folder inside the sidebar triggers a standard input command (`navigate hwnd|path`) to the PowerShell process. The script matches the target handle (`HWND`) and invokes:
-     ```powershell
-     $targetWindow.Navigate($targetPath)
-     ```
-     This forces the native File Explorer window to navigate to the clicked folder.
+5. **Explorer Path Synchronization**:
+   Navigating folders inside File Explorer automatically updates the sidebar's tree view. Clicking a folder in the sidebar expands or collapses its tree; it does not navigate the native Explorer window.
 6. **Graceful Window Restoration**:
    The script tracks the original boundaries of every docked Explorer window. When the sidebar is toggled off or the Electron app is closed, the watcher process restores all native Explorer windows to their original dimensions and exits.
 

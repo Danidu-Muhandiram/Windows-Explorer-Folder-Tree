@@ -117,27 +117,6 @@ while ($true) {
             if ($line -eq "exit") {
                 break
             }
-            elseif ($line -like "navigate *") {
-                $parts = $line.Substring(9).Split("|")
-                if ($parts.Length -eq 2) {
-                    $targetHwnd = [int64]$parts[0]
-                    $targetPath = $parts[1]
-
-                    # Find the target Explorer window and navigate
-                    $tempShell = New-Object -ComObject Shell.Application
-                    $tempWindows = $tempShell.Windows()
-                    foreach ($w in $tempWindows) {
-                        if ($w.HWND -eq $targetHwnd) {
-                            try {
-                                $w.Navigate($targetPath)
-                            } catch {}
-                            break
-                        }
-                    }
-                    if ($tempWindows) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($tempWindows) | Out-Null }
-                    if ($tempShell) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($tempShell) | Out-Null }
-                }
-            }
         }
 
         # Get the currently active (foreground) window handle
@@ -195,8 +174,6 @@ while ($true) {
         # Process the target window if found
         if ($targetWindow -ne $null) {
             
-            $foundTracked = $true
-
             # Get folder path from Explorer window
             $path = $targetWindow.Document.Folder.Self.Path
 

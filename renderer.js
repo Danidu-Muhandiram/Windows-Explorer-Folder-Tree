@@ -24,7 +24,6 @@ const toggleDate = document.getElementById("toggle-date");
 const toggleSize = document.getElementById("toggle-size");
 const pinBtn = document.getElementById("pin-btn");
 const pinnedList = document.getElementById("pinned-list");
-const previewPanel = document.getElementById("preview-panel");
 const previewTitle = document.getElementById("preview-title");
 const openFileBtn = document.getElementById("open-file-btn");
 const previewMeta = document.getElementById("preview-meta");
@@ -212,7 +211,7 @@ function sortItems(itemsList, criteria) {
 }
 
 // Open folder functionality
-async function openRootFolder(folderPath) {
+function openRootFolder(folderPath) {
   if (!folderPath) return;
 
   currentRootPath = folderPath;
@@ -439,8 +438,7 @@ function loadChildren(dirPath, container) {
         fullPath,
         isDirectory: isDir,
         size: isDir ? (needsFolderSize ? getFolderSize(fullPath) : 0) : stat.size,
-        mtimeMs: stat.mtimeMs,
-        stat
+        mtimeMs: stat.mtimeMs
       });
     }
 
@@ -753,27 +751,12 @@ if (document.readyState === "interactive" || document.readyState === "complete")
   initSettings();
 }
 
-const smartSidebarToggle =
-  document.getElementById(
-    "smartSidebarToggle"
-  );
+const smartSidebarToggle = document.getElementById("smartSidebarToggle");
 
 if (smartSidebarToggle) {
-
-  smartSidebarToggle.addEventListener(
-    "change",
-    () => {
-
-      
-      console.log("toggle clicked");
-      window.require("electron")
-        .ipcRenderer.send(
-          "toggle-smart-sidebar",
-          smartSidebarToggle.checked
-        );
-
-    }
-  );
+  smartSidebarToggle.addEventListener("change", () => {
+    ipcRenderer.send("toggle-smart-sidebar", smartSidebarToggle.checked);
+  });
 }
 
 // Make openRootFolder globally accessible

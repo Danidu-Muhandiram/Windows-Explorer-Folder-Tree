@@ -11,8 +11,6 @@ const path = require("path");
 // import spawn to run powershell script
 const { spawn } = require("child_process");
 const readline = require("readline");
-// import fs module
-const fs = require("fs");
 // store the Electron window
 let win;
 let sidebarWindow;
@@ -247,7 +245,6 @@ function startExplorerWatcher() {
       lastExplorerActive = false;
       if (sidebarWindow && !sidebarWindow.isDestroyed()) sidebarWindow.hide();
     }
-    console.log("Explorer watcher stopped");
   });
 }
 
