@@ -121,7 +121,7 @@ function resetPreviewPanel() {
   $("preview-meta")?.replaceChildren();
   if (previewBody) {
     const empty = node("div", "empty-preview-state");
-    empty.append(node("span", "empty-preview-icon", "▤"), node("h3", "", "A closer look"), node("p", "", "Select a file to see its preview, size, and details."));
+    empty.append(node("span", "empty-preview-icon"), node("h3", "", "Preview & details"), node("p", "", "Select a file to see its preview, size, and details."));
     previewBody.replaceChildren(empty);
   }
 }
@@ -178,17 +178,22 @@ async function renderTree() {
     if (version === treeVersion) showError(treeContainer, error, renderTree);
   }
 }
+function iconClassFor(entry) {
+  if (entry.isDirectory) return "type-folder";
+  const ext = (entry.extension || "").toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".tiff"].includes(ext)) return "type-image";
+  if (ext === ".pdf") return "type-pdf";
+  if ([".doc", ".docx", ".rtf", ".odt"].includes(ext)) return "type-word";
+  if ([".xls", ".xlsx", ".csv", ".tsv"].includes(ext)) return "type-excel";
+  if ([".ppt", ".pptx", ".key"].includes(ext)) return "type-ppt";
+  if ([".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma"].includes(ext)) return "type-audio";
+  if ([".mp4", ".webm", ".mkv", ".avi", ".mov", ".wmv", ".flv"].includes(ext)) return "type-video";
+  if ([".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"].includes(ext)) return "type-archive";
+  if ([".js", ".jsx", ".ts", ".tsx", ".json", ".html", ".css", ".scss", ".less", ".py", ".c", ".cpp", ".h", ".hpp", ".cs", ".rs", ".go", ".php", ".rb", ".sh", ".ps1", ".bat", ".cmd", ".sql", ".yaml", ".yml", ".toml", ".md", ".txt", ".ini", ".env", ".gitignore", ".lock", ".xml"].includes(ext)) return "type-code";
+  return "type-file";
+}
 function iconFor(entry) {
-  if (entry.isDirectory) return "📁";
-  const ext = entry.extension;
-  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) return "🖼️";
-  if (ext === ".pdf") return "📕";
-  if ([".doc", ".docx"].includes(ext)) return "📘";
-  if ([".xls", ".xlsx", ".csv"].includes(ext)) return "📗";
-  if ([".ppt", ".pptx"].includes(ext)) return "📙";
-  if ([".mp3", ".wav", ".ogg"].includes(ext)) return "🎵";
-  if ([".mp4", ".webm", ".mkv"].includes(ext)) return "🎥";
-  return "📄";
+  return iconClassFor(entry);
 }
 async function buildTreeNode(entry, version) {
   const item = node("div", entry.isDirectory ? "tree-item folder" : "tree-item");
@@ -202,8 +207,8 @@ async function buildTreeNode(entry, version) {
     for (const row of treeContainer.querySelectorAll('[role="treeitem"]')) row.tabIndex = row === item ? 0 : -1;
   });
   const header = node("div", "tree-item-header");
-  const arrow = node("span", "arrow", "▶");
-  const icon = node("span", "node-icon", iconFor(entry));
+  const arrow = node("span", "arrow");
+  const icon = node("span", `node-icon ${iconClassFor(entry)}`);
   if (entry.isDirectory) header.append(arrow); else icon.classList.add("file-icon");
   header.append(icon, node("span", "node-name", entry.name));
   const metadata = [];
@@ -241,7 +246,7 @@ async function buildTreeNode(entry, version) {
     const expand = expanded => {
       item.classList.toggle("expanded", expanded);
       item.setAttribute("aria-expanded", String(expanded));
-      icon.textContent = expanded ? "📂" : "📁";
+      icon.classList.toggle("folder-open", expanded);
     };
     header.addEventListener("click", async event => {
       event.stopPropagation();
@@ -308,7 +313,7 @@ function showMediaPreview(info) {
   if (tag === "img") media.alt = info.name;
   else {
     media.controls = true;
-    if (tag === "audio") wrapper.append(node("span", "media-icon", "🎵"));
+    if (tag === "audio") wrapper.append(node("span", "media-icon"));
   }
   media.addEventListener("error", () => wrapper.replaceChildren(node("p", "error-message", "This file could not be previewed. Use Open to view it in another application.")));
   wrapper.append(media);
@@ -354,7 +359,7 @@ async function showFilePreview(filePath) {
       const card = node("div", "document-placeholder-card");
       const open = node("button", "open-external-btn", "Open File");
       open.addEventListener("click", () => openFile(info.path));
-      card.append(node("span", "document-icon", "📄"), node("div", "document-info-title", types[info.extension] || "Generic File"), node("div", "document-info-desc", "A preview is not available. Open this file using your system's default program."), open);
+      card.append(node("span", `document-icon ${iconClassFor(info)}`), node("div", "document-info-title", types[info.extension] || "Generic File"), node("div", "document-info-desc", "A preview is not available for this file type. Open this file using your system's default application."), open);
       previewBody.replaceChildren(card);
     }
   } catch (error) { if (version === previewVersion) showError(previewBody, error); }
@@ -369,7 +374,7 @@ function renderPinnedList() {
     item.title = folderPath;
     const info = node("button", "pinned-item-info favorite-open");
     info.title = folderPath;
-    info.append(node("span", "", "📁"), node("span", "pinned-item-name", basename(folderPath)));
+    info.append(node("span", "pinned-icon type-folder"), node("span", "pinned-item-name", basename(folderPath)));
     const unpin = node("button", "unpin-btn", "×");
     unpin.title = "Unpin folder";
     unpin.addEventListener("click", event => {

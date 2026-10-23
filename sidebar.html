@@ -2,103 +2,61 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' file:; media-src file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' file: data:; media-src file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 
   <title>Explorer Sidebar</title>
 
   <!-- Reuse same styles -->
-  <link rel="stylesheet"
-        href="style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body class="sidebar-mode">
 
   <div class="sidebar-app">
-    <div class="companion-heading"><span class="brand-mark" aria-hidden="true">FT</span><div><strong>Explorer companion</strong><span>Folder Tree Explorer</span></div></div>
+    <div class="companion-heading">
+      <img class="brand-logo-img" src="assets/icon2.png" alt="Folder Tree icon" width="30" height="30">
+      <div>
+        <strong>Folder Tree</strong>
+        <span>Explorer Sidebar</span>
+      </div>
+    </div>
 
     <!-- Compact top controls -->
     <header class="sidebar-top-controls">
 
       <!-- File Type Filter -->
-      <select id="filter-select" aria-label="File type filter">
-
-        <option value="all">
-          All files
-        </option>
-
-        <option value="images">
-          Images
-        </option>
-
-        <option value="png">
-          PNG
-        </option>
-
-        <option value="jpg">
-          JPG
-        </option>
-
-        <option value="pdf">
-          PDF
-        </option>
-
-        <option value="word">
-          Word
-        </option>
-
-        <option value="excel">
-          Excel
-        </option>
-
-        <option value="ppt">
-          PowerPoint
-        </option>
-
-      </select>
+      <div class="select-wrapper">
+        <select id="filter-select" aria-label="File type filter">
+          <option value="all">All files</option>
+          <option value="images">Images</option>
+          <option value="png">PNG</option>
+          <option value="jpg">JPG</option>
+          <option value="pdf">PDF</option>
+          <option value="word">Word</option>
+          <option value="excel">Excel</option>
+          <option value="ppt">PowerPoint</option>
+        </select>
+      </div>
 
       <!-- Sorting -->
-      <select id="sort-select" aria-label="Sort order">
-
-        <option value="name-asc">
-          A-Z
-        </option>
-
-        <option value="name-desc">
-          Z-A
-        </option>
-
-        <option value="size-asc">
-          Size ↑
-        </option>
-
-        <option value="size-desc">
-          Size ↓
-        </option>
-
-        <option value="date-asc">
-          Oldest
-        </option>
-
-        <option value="date-desc">
-          Newest
-        </option>
-
-      </select>
+      <div class="select-wrapper">
+        <select id="sort-select" aria-label="Sort order">
+          <option value="name-asc">A-Z</option>
+          <option value="name-desc">Z-A</option>
+          <option value="size-asc">Size ↑</option>
+          <option value="size-desc">Size ↓</option>
+          <option value="date-asc">Oldest</option>
+          <option value="date-desc">Newest</option>
+        </select>
+      </div>
 
     </header>
 
     <!-- Folder Path -->
     <div class="path-bar">
-
-      <span class="path-label">
-        Folder
-      </span>
-
-      <div id="path">
-        Waiting for Explorer...
-      </div>
+      <span class="path-label">Folder</span>
+      <div id="path">Waiting for Explorer...</div>
       <button id="refresh-btn" class="secondary-btn" title="Refresh (F5 or Ctrl+R)">Refresh</button>
-
     </div>
 
     <div id="scan-status" class="scan-status" hidden>
@@ -109,23 +67,12 @@
 
     <!-- SAME TREE UI -->
     <main class="tree-panel">
-
       <div id="tree-container" role="tree" aria-label="Explorer folder contents">
-
         <div class="empty-tree-state">
-
-          <span class="empty-icon">
-            📂
-          </span>
-
-          <p>
-            Open File Explorer
-          </p>
-
+          <span class="empty-icon" aria-hidden="true"></span>
+          <p>Open File Explorer</p>
         </div>
-
       </div>
-
     </main>
 
   </div>
