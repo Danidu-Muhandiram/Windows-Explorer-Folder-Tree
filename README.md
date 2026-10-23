@@ -5,7 +5,7 @@
 [![Electron](https://img.shields.io/badge/Electron-42.3.2-47848F?logo=electron)](https://www.electronjs.org/)
 [![PowerShell](https://img.shields.io/badge/PowerShell-Watcher-5391FE?logo=powershell)](https://github.com/PowerShell/PowerShell)
 
-**Folder Tree Explorer** is a sleek, modern desktop companion app for Windows. It provides a fast, customizable, side-by-side hierarchical tree view with rich in-app media previews, robust sorting/filtering, and a revolutionary **Smart Explorer Sidebar** mode that docks itself directly next to active Windows File Explorer windows.
+**Folder Tree Explorer** is a Windows desktop folder browser built with Electron. Browse a hierarchical tree, filter and sort files, save favorite folders, and preview files alongside the tree. An optional **Smart Explorer Sidebar** follows the active Windows File Explorer window.
 
 ---
 
@@ -16,16 +16,16 @@ While the native Windows File Explorer is capable, it has several limitations fo
 2. **No Side-by-Side Previews**: Previewing markdown files, code, audio, and video requires opening external apps or using slow, non-configurable preview panes.
 3. **No Direct Folder Companion Mode**: There is no official way to have a lightweight, persistent tree pane dock and follow you as you open and browse different directories in native File Explorer windows.
 
-**Folder Tree Explorer** acts as the perfect companion. In its standalone form, it provides a feature-rich workspace with media players and syntax-highlighted viewers. In its **Smart Sidebar** mode, it attaches seamlessly to Windows File Explorer, transforming standard folder browsing with an interactive, side-by-side directory tree.
+In standalone mode, the app displays a folder tree beside media and plain-text/code previews with line numbers. Smart Sidebar mode provides a compact companion tree beside Windows File Explorer; this native docking feature remains beta.
 
 ---
 
 ## ✨ Main Application Features
 
-*   **⚡ Lazy-Loaded Folder Tree**: Seamlessly traverses huge directories. Subfolders are queried on demand upon tree expansion, preventing application freezes or memory bloating.
-*   **🔍 Type-Specific File Filters**: Filter the active folder tree instantly. Show only Images (PNG, JPG, SVG, GIF), PDF Documents, Word Documents, Excel/CSV Spreadsheets, or PowerPoint Presentations.
+*   **⚡ Lazy-Loaded Folder Tree**: Subfolders load when expanded. Scans run in background workers, and large tree listings render in batches. Very large directories can still use substantial memory.
+*   **🔍 Type-Specific File Filters**: Show only images, PDF documents, Word documents, Excel/CSV spreadsheets, or PowerPoint presentations. Recursive filtering supports progress and cancellation.
 *   **📊 Smart Sorting**: Group directories first and sort files by Name (A-Z or Z-A), Size (Smallest or Largest first), or Date Modified (Newest or Oldest first).
-*   **💾 Folder size caching**: Computes directory sizes in the background and caches the results, allowing instant rendering of folder sizes.
+*   **💾 Folder size caching**: Computes directory sizes in the background and caches complete results until the root is reopened or refreshed.
 *   **👁️ Rich In-App Previews**:
     *   *Images*: Centered viewer with transparency check grids.
     *   *Audio/Video*: Native HTML5 players with playback speed and volume controls.
@@ -33,7 +33,8 @@ While the native Windows File Explorer is capable, it has several limitations fo
     *   *Document Placeholders*: Shows clear metadata and action buttons to open unsupported documents (Word, Excel, PDF) in their native system programs.
 *   **📍 Favorites (Pinned Folders)**: Pin frequently accessed folder paths to the sidebar for quick switching. Favorites are persisted across sessions in `localStorage`.
 *   **📋 Clipboard Integration**: Copy absolute paths of any selected file or folder instantly.
-*   **🌗 Dynamic Theme Engine**: Toggle between Outfit-font-styled Light and Dark themes, with changes immediately synchronized across all window components.
+*   **🌗 Light and Dark Themes**: System fonts and local styles keep the interface independent of external font services. Theme changes are synchronized with the companion sidebar.
+*   **↔ Adjustable Preview**: Drag the divider or use its Left/Right keys to change preview width. Hide the preview to give the tree more room. Layout preferences are saved across sessions.
 
 ---
 
@@ -45,13 +46,13 @@ Both application windows run with Node integration disabled, context isolation e
 
 Each window has its own active browsing folder. Directory reads, bounded text previews, media URLs, and file opening are checked against that folder using canonical paths; links outside it are skipped. Directory junctions and symlinks are omitted from tree rows to prevent cyclic expansion. Selecting another folder or opening a favorite explicitly changes that window's browsing root. Text previews are limited to 50,000 bytes, and directories/special files cannot be opened as file previews. The API provides no filesystem write or arbitrary command-execution method.
 
-The UI constructs dynamic content using DOM properties and `textContent`. Both pages enforce a Content Security Policy that blocks inline scripts, frames, plugins, forms, and network connections. The existing Google Fonts stylesheet and fonts remain allowed. Navigation away from the application pages, embedded webviews, and popup windows are blocked.
+The UI constructs dynamic content using DOM properties and `textContent`. Both pages enforce a Content Security Policy that blocks inline scripts, frames, plugins, forms, and network connections. Fonts and styles are local. Navigation away from the application pages, embedded webviews, and popup windows are blocked.
 
 Folder scanning, filtering, size calculation, sorting, and previews run in a dedicated worker thread for each window. Scan progress reports the number of entries checked rather than an estimated percentage. Use **Cancel** or **Escape** to stop a scan. Changing the root, refreshing, or collapsing a loading folder also cancels obsolete work. Traversal checks cancellation between filesystem operations; an operating-system request already in flight may still finish. Cancelled and incomplete calculations are not cached as complete results.
 
 Use **Refresh**, **F5**, or **Ctrl+R** to reread the active folder and clear scan caches. Expanded folders are restored, keyboard focus returns to the same row where possible, and the previous file preview is cleared. Tree navigation supports **Up/Down**, **Home/End**, **Right** to expand or enter a folder, **Left** to collapse or return to its parent, and **Enter/Space** to activate a row. Favorites use native buttons, and keyboard focus is visible on controls and tree rows. Access errors and cancelled scans offer retry actions; partial folder sizes are marked “At least”.
 
-Run `npm.cmd test` to exercise the security boundary and browsing regressions. The suite includes real worker scans, cancellation, junction cycles, keyboard interactions, and docking calculations at 100%, 125%, 150%, and 200% scaling with positive/negative monitor origins. An optional hidden-window Electron integration check is available with `node_modules\\electron\\dist\\electron.exe tests\\electron-smoke.cjs` (unset `ELECTRON_RUN_AS_NODE` if it is present). It uses temporary fixtures and an isolated profile, and writes its screenshot to `.cache/electron-smoke.png`.
+Run `npm.cmd test` to exercise the security boundary and browsing regressions. The suite includes real worker scans, cancellation, junction cycles, keyboard interactions, and docking calculations at 100%, 125%, 150%, and 200% scaling with positive/negative monitor origins. An optional hidden-window Electron integration check is available with `node_modules\electron\dist\electron.exe tests\electron-smoke.cjs` (unset `ELECTRON_RUN_AS_NODE` if it is present). It uses temporary fixtures and an isolated profile, captures both themes and the sidebar under `.cache/`, and checks rendering of a 1,200-file folder. See [validation notes](docs/VALIDATION.md) for the scope and remaining hardware checks.
 
 ### Docking verification
 
@@ -68,7 +69,7 @@ Automated coordinate and native-call mocks do not replace these hardware checks:
 | Change scale or disconnect a monitor | Sidebar moves onto an available work area |
 | Minimize, restore, disable sidebar, quit | No stranded sidebar or repeatedly shrinking Explorer window |
 
-The development environment currently exposes one 1366×768 display. Mixed-monitor docking and the final corrected Electron smoke run still require manual verification.
+The hidden-window Electron smoke test passes on one 1366×768 display at 100% scaling. Native Explorer docking, mixed-monitor behavior, and physical DPI transitions still require manual verification; simulated coordinate tests do not establish hardware compatibility.
 
 ### System Architecture
 
@@ -167,7 +168,7 @@ npm start
 ```
 
 ### 4. Build the Production Installer
-This command bundles the code, compiles PowerShell helpers, and generates a standalone NSIS `.exe` installer inside the `release/` directory.
+This command bundles the code, includes the PowerShell helper and worker files, and generates an NSIS `.exe` installer inside the `release/` directory.
 ```bash
 npm run build
 ```
@@ -177,19 +178,19 @@ npm run build
 ## 📸 User Interface & Screenshots
 
 ### 1. Main Workspace
-The standalone application offers a high-performance directory tree, filtering controls, sorting mechanisms, and a full file preview panel side-by-side.
+The standalone application offers a folder tree, browsing controls, favorites, and a resizable file preview.
 
-![Main Interface Layout](assets/screenshots/main_layout.png) *Placeholder: Add your main workspace image here*
+![Dark theme workspace](assets/screenshots/main_layout.png)
 
-### 2. Smart Sidebar Docking
-Toggle the **Smart Explorer Sidebar** option in the controls panel to automatically shrink and dock the Folder Tree to any active Windows File Explorer.
+![Light theme workspace](assets/screenshots/main_light.png)
 
-![Docked Sidebar Mode](assets/screenshots/smart_sidebar_docked.png) *Placeholder: Add your docked sidebar image here*
+### 2. Explorer Companion
+Toggle **Smart Explorer Sidebar** to follow an active Windows File Explorer window. The image below shows the companion window by itself, rather than a hardware docking test.
+
+![Explorer companion window](assets/screenshots/explorer_companion.png)
 
 ### 3. Setup and Installation Wizard
 The NSIS Installer handles desktop shortcut creation and launches the app directly after installation.
-
-![NSIS Installation Wizard](assets/screenshots/installer_wizard.png) *Placeholder: Add your installer wizard image here*
 
 ---
 
@@ -198,8 +199,10 @@ The NSIS Installer handles desktop shortcut creation and launches the app direct
 The application saves user preferences inside the browser's standard LocalStorage:
 *   `theme`: Stores active color theme (`light` or `dark`).
 *   `pinnedFolders`: Stores an array of absolute directories pinned in the Favorites section.
+*   `previewVisible`: Stores whether the main preview pane is shown.
+*   `previewWidth`: Stores the preferred preview width, clamped to the current window size.
 
-No configuration files are written outside the local app data registry, keeping the application light, portable, and clean.
+Electron stores LocalStorage and Chromium profile data in its application data directory. Preferences are not stored in the Windows registry.
 
 ---
 

@@ -122,10 +122,11 @@ function stopExplorerWatcher() {
 function createWindow() {
   // Create a new browser window
   win = new BrowserWindow({
-    width: 1000,
-    height: 650,
+    width: 1120,
+    height: 720,
     minWidth: 800,
     minHeight: 500,
+    icon: path.join(__dirname, "assets", "icon.ico"),
     // browser settings
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -358,13 +359,21 @@ ipcMain.on("theme-changed", (event, theme) => {
   }
 });
 
+async function scanResult(request) {
+  try { return await request; }
+  catch (error) {
+    // Cancellation is a normal response, not an unhandled Electron IPC error.
+    if (error.code === "ABORT_ERR") return { cancelled: true };
+    throw error;
+  }
+}
 ipcMain.handle("browse-root", (event, value, showSize = false, requestId = null) => {
   requireTrustedSender(event);
-  return fileSessions.get(event.sender).openRoot(value, showSize, requestId);
+  return scanResult(fileSessions.get(event.sender).openRoot(value, showSize, requestId));
 });
 ipcMain.handle("read-directory", (event, value, options, requestId = null) => {
   requireTrustedSender(event);
-  return fileSessions.get(event.sender).readDirectory(value, options, requestId);
+  return scanResult(fileSessions.get(event.sender).readDirectory(value, options, requestId));
 });
 ipcMain.handle("cancel-scan", (event, requestId = null) => {
   requireTrustedSender(event);

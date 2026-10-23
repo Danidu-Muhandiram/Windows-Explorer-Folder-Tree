@@ -35,6 +35,8 @@ test("preload exposes fixed capabilities and strips privileged event objects", a
   stopProgress();
   await api.cancelScan(7);
   assert.deepEqual(calls.at(-1), ["cancel-scan", 7]);
+  ipc.invoke = async () => ({ cancelled: true });
+  await assert.rejects(api.readDirectory("C:/root", { filter: "all" }, 8), /Scan cancelled/);
 });
 
 test("both HTML pages enforce CSP and have no inline scripts or styles", () => {

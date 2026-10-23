@@ -8,10 +8,15 @@ function subscribe(channel, callback) {
 }
 
 // Fixed methods and channels only. Never expose ipcRenderer or IPC event objects.
+async function scan(channel, ...args) {
+  const result = await ipcRenderer.invoke(channel, ...args);
+  if (result?.cancelled) throw new Error("Scan cancelled");
+  return result;
+}
 contextBridge.exposeInMainWorld("folderTree", {
   selectFolder: () => ipcRenderer.invoke("select-folder"),
-  openRoot: (value, showSize = false, requestId = null) => ipcRenderer.invoke("browse-root", value, showSize, requestId),
-  readDirectory: (value, options, requestId = null) => ipcRenderer.invoke("read-directory", value, options, requestId),
+  openRoot: (value, showSize = false, requestId = null) => scan("browse-root", value, showSize, requestId),
+  readDirectory: (value, options, requestId = null) => scan("read-directory", value, options, requestId),
   cancelScan: (requestId = null) => ipcRenderer.invoke("cancel-scan", requestId),
   onScanProgress: callback => subscribe("scan-progress", callback),
   preview: value => ipcRenderer.invoke("preview-file", value),

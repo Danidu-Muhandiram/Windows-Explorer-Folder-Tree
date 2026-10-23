@@ -8,7 +8,8 @@ function element(tagName = "div", ownerDocument) {
   const classes = new Set();
   const attributes = new Map();
   const result = {
-    tagName, children: [], handlers: {}, style: {}, dataset: {}, ownerDocument,
+    tagName, children: [], handlers: {}, style: { setProperty(name, value) { this[name] = value; } }, dataset: {}, ownerDocument,
+    clientWidth: 800, setPointerCapture() {},
     classList: { add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value), toggle(value, force) { if (force) classes.add(value); else classes.delete(value); } },
     addEventListener(name, handler) { this.handlers[name] = handler; },
     setAttribute(name, value) { attributes.set(name, String(value)); },
@@ -42,16 +43,17 @@ function element(tagName = "div", ownerDocument) {
   return result;
 }
 
-function renderer({ savedPins = null, api = {} } = {}) {
+function renderer({ savedPins = null, api = {}, layout = false, preferences = {} } = {}) {
   const document = { handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } };
   const elements = Object.fromEntries(["tree-container", "path", "preview-body", "preview-meta", "preview-title", "open-file-btn", "pinned-list", "pin-btn", "refresh-btn", "scan-status", "scan-progress", "scan-message", "cancel-scan-btn"].map(id => [id, element("div", document)]));
+  if (layout) for (const id of ["viewer-layout", "preview-panel", "preview-divider", "toggle-preview-btn"]) elements[id] = element("div", document);
   Object.assign(document, { getElementById: id => elements[id] || null,
     createElement: tag => element(tag, document), body: element("body", document),
     querySelectorAll: selector => elements["tree-container"].querySelectorAll(selector) });
   const context = {
     document,
-    localStorage: { getItem: key => key === "pinnedFolders" ? savedPins : null, setItem() {} },
-    window: { folderTree: api }, console, setTimeout
+    localStorage: { getItem: key => key === "pinnedFolders" ? savedPins : preferences[key] || null, setItem(key, value) { preferences[key] = value; } },
+    window: { folderTree: api, handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } }, console, setTimeout
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../renderer.js"), "utf8"), context);
@@ -201,4 +203,35 @@ test("missing folder errors offer a retry and favorite opens use native buttons"
   assert.match(error.children[0].textContent, /no longer exists/);
   await error.children[1].handlers.click();
   assert.equal(fixture.elements["tree-container"].children[0].getAttribute("role"), "treeitem");
+});
+
+test("preview can be hidden and restored, with its preference saved", () => {
+  const preferences = { previewVisible: "false", previewWidth: "400" };
+  const fixture = renderer({ layout: true, preferences });
+  assert.equal(fixture.elements["preview-panel"].hidden, true);
+  assert.equal(fixture.elements["preview-divider"].hidden, true);
+  assert.equal(fixture.elements["toggle-preview-btn"].textContent, "Show preview");
+  fixture.elements["toggle-preview-btn"].handlers.click();
+  assert.equal(fixture.elements["preview-panel"].hidden, false);
+  assert.equal(fixture.elements["preview-divider"].getAttribute("aria-valuenow"), "400");
+  assert.equal(preferences.previewVisible, "true");
+});
+
+test("preview resize supports keyboard and pointer controls and preserves space for the tree", () => {
+  const preferences = {};
+  const fixture = renderer({ layout: true, preferences });
+  const divider = fixture.elements["preview-divider"];
+  divider.handlers.keydown({ key: "ArrowLeft", preventDefault() {} });
+  assert.equal(divider.getAttribute("aria-valuenow"), "376");
+  divider.handlers.pointerdown({ button: 0, pointerId: 1, clientX: 400, preventDefault() {} });
+  divider.handlers.pointermove({ pointerId: 1, clientX: 350 });
+  divider.handlers.pointerup({ type: "pointerup", pointerId: 1 });
+  assert.equal(divider.getAttribute("aria-valuenow"), "426");
+  assert.equal(preferences.previewWidth, "426");
+  fixture.elements["viewer-layout"].clientWidth = 570;
+  fixture.context.window.handlers.resize();
+  assert.equal(divider.getAttribute("aria-valuenow"), "313");
+  assert.equal(preferences.previewWidth, "426");
+  divider.handlers.keydown({ key: "Home", preventDefault() {} });
+  assert.equal(divider.getAttribute("aria-valuenow"), "240");
 });

@@ -121,13 +121,15 @@ function resetPreviewPanel() {
   $("preview-meta")?.replaceChildren();
   if (previewBody) {
     const empty = node("div", "empty-preview-state");
-    empty.append(node("span", "empty-preview-icon", "👁️"), node("p", "", "Select a file from the tree to view its preview and details."));
+    empty.append(node("span", "empty-preview-icon", "▤"), node("h3", "", "A closer look"), node("p", "", "Select a file to see its preview, size, and details."));
     previewBody.replaceChildren(empty);
   }
 }
 async function openRootFolder(folderPath) {
   cancelScans();
   lastRequestedRoot = folderPath;
+  $("path").textContent = folderPath;
+  $("path").title = folderPath;
   const version = ++treeVersion;
   currentRootPath = null;
   selectedFilePath = null;
@@ -140,6 +142,7 @@ async function openRootFolder(folderPath) {
     if (version !== treeVersion) return;
     currentRootPath = entry.path;
     $("path").textContent = entry.path;
+    $("path").title = entry.path;
     updatePinButtonState();
     const root = await buildTreeNode(entry, version);
     if (version === treeVersion) {
@@ -192,6 +195,7 @@ async function buildTreeNode(entry, version) {
   item.setAttribute("role", "treeitem");
   item.setAttribute("aria-label", entry.name);
   item.dataset.path = entry.path;
+  item.title = entry.path;
   item.tabIndex = -1;
   item.addEventListener("focus", event => {
     if (event.target !== item) return;
@@ -327,12 +331,12 @@ async function showFilePreview(filePath) {
       row.append(node("span", "meta-key", label), node("span", "meta-val", value));
       if (label === "Full Path:") {
         row.classList.add("copy-path-row");
-        const copy = node("button", "copy-btn", "📋 Copy");
+        const copy = node("button", "copy-btn", "Copy path");
         copy.addEventListener("click", async () => {
           try {
             await navigator.clipboard.writeText(info.path);
             copy.textContent = "Copied!";
-            setTimeout(() => { copy.textContent = "📋 Copy"; }, 1500);
+            setTimeout(() => { copy.textContent = "Copy path"; }, 1500);
           } catch { copy.textContent = "Copy failed"; }
         });
         row.append(copy);
@@ -384,7 +388,7 @@ function updatePinButtonState() {
   if (!button) return;
   const pinned = pinnedFolders.includes(currentRootPath);
   button.disabled = !currentRootPath || pinned;
-  button.textContent = pinned ? "📍 Pinned" : "📌 Pin Current Folder";
+  button.textContent = pinned ? "Saved to favorites" : "Save to favorites";
 }
 function initSettings() {
   const savedTheme = localStorage.getItem("theme");
@@ -398,10 +402,12 @@ function initSettings() {
   } catch { /* Ignore corrupt saved favorites. */ }
   renderPinnedList(); updatePinButtonState();
 }
-$("btn")?.addEventListener("click", async () => {
+async function chooseFolder() {
   try { const value = await api.selectFolder(); if (value) await openRootFolder(value); }
   catch (error) { showError(treeContainer, error); }
-});
+}
+$("btn")?.addEventListener("click", chooseFolder);
+$("empty-open-folder-btn")?.addEventListener("click", chooseFolder);
 $("theme-select")?.addEventListener("change", event => {
   const theme = event.target.value;
   document.body.setAttribute("data-theme", theme);
@@ -428,4 +434,72 @@ document.addEventListener("keydown", event => {
   }
 });
 initSettings();
+initPreviewLayout();
 window.openRootFolder = openRootFolder;
+
+function initPreviewLayout() {
+  const viewer = $("viewer-layout");
+  const preview = $("preview-panel");
+  const divider = $("preview-divider");
+  const toggle = $("toggle-preview-btn");
+  if (!viewer || !preview || !divider || !toggle) return;
+  let preferred = Number(localStorage.getItem("previewWidth")) || 360;
+  preferred = Math.max(240, Math.min(560, preferred));
+  let current = preferred;
+  let drag = null;
+  function applyWidth() {
+    const max = Math.max(240, Math.min(560, Math.floor(viewer.clientWidth * .55), viewer.clientWidth - 246));
+    current = Math.round(Math.max(240, Math.min(max, preferred)));
+    viewer.style.setProperty("--preview-width", `${current}px`);
+    divider.setAttribute("aria-valuemax", String(max));
+    divider.setAttribute("aria-valuenow", String(current));
+  }
+  function setVisible(visible) {
+    preview.hidden = !visible;
+    divider.hidden = !visible;
+    viewer.classList.toggle("preview-hidden", !visible);
+    toggle.setAttribute("aria-pressed", String(visible));
+    toggle.textContent = visible ? "Hide preview" : "Show preview";
+    localStorage.setItem("previewVisible", String(visible));
+    applyWidth();
+  }
+  toggle.addEventListener("click", () => setVisible(preview.hidden));
+  divider.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    drag = { id: event.pointerId, x: event.clientX, width: current, preferred };
+    divider.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-preview");
+    event.preventDefault();
+  });
+  divider.addEventListener("pointermove", event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    preferred = Math.max(240, Math.min(560, drag.width + drag.x - event.clientX));
+    applyWidth();
+  });
+  function finishDrag(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (event.type === "pointercancel") preferred = drag.preferred;
+    drag = null;
+    document.body.classList.remove("resizing-preview");
+    localStorage.setItem("previewWidth", String(preferred));
+    applyWidth();
+  }
+  divider.addEventListener("pointerup", finishDrag);
+  divider.addEventListener("pointercancel", finishDrag);
+  divider.addEventListener("lostpointercapture", finishDrag);
+  divider.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    preferred = event.key === "Home" ? 240 : event.key === "End" ? Number(divider.getAttribute("aria-valuemax")) : current + (event.key === "ArrowLeft" ? 16 : -16);
+    preferred = Math.max(240, Math.min(560, preferred));
+    localStorage.setItem("previewWidth", String(preferred));
+    applyWidth();
+  });
+  divider.addEventListener("dblclick", () => {
+    preferred = 360;
+    localStorage.setItem("previewWidth", "360");
+    applyWidth();
+  });
+  window.addEventListener("resize", applyWidth);
+  setVisible(localStorage.getItem("previewVisible") !== "false");
+}

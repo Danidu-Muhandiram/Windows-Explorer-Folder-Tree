@@ -2,22 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' file:; media-src file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' file:; media-src file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 
   <title>Explorer Sidebar</title>
-
-  <!-- Same font -->
-  <link rel="preconnect"
-        href="https://fonts.googleapis.com">
-
-  <link rel="preconnect"
-        href="https://fonts.gstatic.com"
-        crossorigin>
-
-  <link
-    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap"
-    rel="stylesheet"
-  >
 
   <!-- Reuse same styles -->
   <link rel="stylesheet"
@@ -27,6 +14,7 @@
 <body class="sidebar-mode">
 
   <div class="sidebar-app">
+    <div class="companion-heading"><span class="brand-mark" aria-hidden="true">FT</span><div><strong>Explorer companion</strong><span>Folder Tree Explorer</span></div></div>
 
     <!-- Compact top controls -->
     <header class="sidebar-top-controls">
@@ -35,11 +23,11 @@
       <select id="filter-select" aria-label="File type filter">
 
         <option value="all">
-          📁 All Files
+          All files
         </option>
 
         <option value="images">
-          🖼️ Images
+          Images
         </option>
 
         <option value="png">
@@ -103,7 +91,7 @@
     <div class="path-bar">
 
       <span class="path-label">
-        Location:
+        Folder
       </span>
 
       <div id="path">

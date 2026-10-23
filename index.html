@@ -2,12 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' file:; media-src file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>🌳 Folder Tree Explorer</title>
-  <!-- Outfit Google Font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' file:; media-src file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Folder Tree Explorer</title>
   <link rel="stylesheet" href="style.css">
 </head>
 
@@ -18,18 +14,18 @@
     <!-- Top Navigation Bar -->
     <header class="top-bar">
       <div class="app-logo">
-        <span class="logo-emoji">🌳</span>
-        <h1>Folder Tree Explorer</h1>
+        <span class="brand-mark" aria-hidden="true">FT</span>
+        <div><h1>Folder Tree Explorer</h1><p class="app-subtitle">Folder browser &amp; Explorer companion</p></div>
       </div>
       <div class="top-actions">
         <div class="theme-picker">
           <label for="theme-select" class="theme-label">Theme</label>
           <select id="theme-select">
-            <option value="light">☀️ Light</option>
-            <option value="dark" selected>🌙 Dark</option>
+            <option value="light">Light</option>
+            <option value="dark" selected>Dark</option>
           </select>
         </div>
-        <button id="btn" class="primary-btn">Select Folder</button>
+        <button id="btn" class="primary-btn">Open folder</button>
       </div>
     </header>
 
@@ -41,24 +37,24 @@
         
         <!-- Controls Panel -->
         <section class="control-panel">
-          <h3>Controls</h3>
+          <h3>Browse settings</h3>
           
           <div class="control-group">
-            <label for="filter-select">File Type Filter</label>
+            <label for="filter-select">File type</label>
             <select id="filter-select">
-              <option value="all">📁 All Files</option>
-              <option value="images">🖼️ Images</option>
-              <option value="png">🖼️ PNG Only</option>
-              <option value="jpg">🖼️ JPG/JPEG Only</option>
-              <option value="pdf">📕 PDF Documents</option>
-              <option value="word">📘 Word Documents</option>
-              <option value="excel">📗 Excel/CSV Spreadsheets</option>
-              <option value="ppt">📙 PowerPoint Slides</option>
+              <option value="all">All files</option>
+              <option value="images">Images</option>
+              <option value="png">PNG images</option>
+              <option value="jpg">JPG / JPEG images</option>
+              <option value="pdf">PDF documents</option>
+              <option value="word">Word documents</option>
+              <option value="excel">Excel / CSV spreadsheets</option>
+              <option value="ppt">PowerPoint slides</option>
             </select>
           </div>
 
           <div class="control-group">
-            <label for="sort-select">Sort Order</label>
+            <label for="sort-select">Sort by</label>
             <select id="sort-select">
               <option value="name-asc">Name (A-Z)</option>
               <option value="name-desc">Name (Z-A)</option>
@@ -87,10 +83,10 @@
               <span class="switch-slider"></span>
               <span class="switch-label">Smart Explorer Sidebar</span>
             </label>
-            <span class="toggle-help">Integrates as a docked side-panel next to active File Explorer windows (Beta).</span>
+            <span class="toggle-help">Dock beside Windows File Explorer. <span class="beta-badge">Beta</span></span>
           </div>
 
-          <button id="pin-btn" class="secondary-btn">📌 Pin Current Folder</button>
+          <button id="pin-btn" class="secondary-btn" disabled>Save to favorites</button>
         </section>
 
         <!-- Pinned Folders (Favorites) -->
@@ -112,9 +108,10 @@
         
         <!-- Current Folder Path Display -->
         <div class="path-bar">
-          <span class="path-label">Location:</span>
+          <span class="path-label">Folder</span>
           <div id="path">No folder selected</div>
           <button id="refresh-btn" class="secondary-btn" title="Refresh (F5 or Ctrl+R)">Refresh</button>
+          <button id="toggle-preview-btn" class="secondary-btn" aria-controls="preview-panel" aria-pressed="true">Hide preview</button>
         </div>
         <div id="scan-status" class="scan-status" hidden>
           <progress id="scan-progress" aria-label="Scanning folders"></progress>
@@ -122,23 +119,28 @@
           <button id="cancel-scan-btn" class="secondary-btn" title="Cancel scan (Escape)">Cancel</button>
         </div>
 
-        <div class="viewer-layout">
+        <div id="viewer-layout" class="viewer-layout">
           
           <!-- Tree Viewer Panel -->
           <div class="tree-panel">
+            <div class="panel-heading"><h2>Folder contents</h2><span class="keyboard-hint">↑ ↓ to navigate</span></div>
             <div id="tree-container" role="tree" aria-label="Folder contents">
               <div class="empty-tree-state">
-                <span class="empty-icon">📁</span>
-                <p>Click "Select Folder" to browse your directory structure.</p>
+                <span class="empty-icon" aria-hidden="true">▱</span>
+                <h3>Start with a folder</h3>
+                <p>Browse its structure and preview files here.</p>
+                <button id="empty-open-folder-btn" class="primary-btn">Open folder</button>
               </div>
             </div>
           </div>
 
+          <div id="preview-divider" class="preview-divider" role="separator" tabindex="0" aria-label="Resize file preview" aria-orientation="vertical" aria-controls="preview-panel" aria-valuemin="240" aria-valuemax="560" aria-valuenow="360"></div>
+
           <!-- Preview Panel -->
           <section id="preview-panel" class="preview-panel">
             <div class="preview-header">
-              <h3 id="preview-title">No file selected</h3>
-              <button id="open-file-btn" class="icon-btn" disabled>🌐 Open</button>
+              <div class="preview-heading"><span class="eyebrow">File preview</span><h3 id="preview-title">No file selected</h3></div>
+              <button id="open-file-btn" class="icon-btn" disabled>Open file ↗</button>
             </div>
             
             <div id="preview-meta" class="preview-meta-container">
@@ -147,8 +149,9 @@
             
             <div id="preview-body" class="preview-body-container">
               <div class="empty-preview-state">
-                <span class="empty-preview-icon">👁️</span>
-                <p>Select a file from the tree to view its preview and details.</p>
+                <span class="empty-preview-icon" aria-hidden="true">▤</span>
+                <h3>A closer look</h3>
+                <p>Select a file to see its preview, size, and details.</p>
               </div>
             </div>
           </section>
